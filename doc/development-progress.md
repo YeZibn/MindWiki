@@ -47,6 +47,48 @@
 
 ### 2026-04-25
 
+#### 记录 005：完成子任务 02 本地 PostgreSQL 初始化脚本与基础表
+
+- 状态：已完成
+- 范围：完成第一个开发模块中“任务 02：建立 PostgreSQL 本地初始化脚本与基础表”
+- 结果：
+  - 新增本地建表脚本 `scripts/init_local_db.sql`
+  - 覆盖 5 张核心表：`sources`、`import_jobs`、`documents`、`sections`、`chunks`
+  - 补充基础外键关系与常用索引
+  - 新增本地重建脚本 `scripts/reset_local_db.sql`
+  - 在项目说明中补充本地数据库初始化与重建命令
+  - 明确 `import_jobs.status` 与 `documents.status` 的当前推荐取值
+- 当前结论：
+  - 当前阶段采用本地 SQL 初始化方案，不引入迁移机制
+  - 状态值先按文档约定执行，暂不在 SQL 层增加强约束
+- 遗留问题：
+  - 尚未接入真实 PostgreSQL 写库逻辑
+  - 尚未验证脚本在目标本地数据库中的实际执行结果
+- 下一步：
+  - 进入任务 03：实现 `mindwiki import file <path>` 的 CLI 单文件导入入口
+
+### 2026-04-25
+
+#### 记录 004：补充本地数据库重建脚本与状态字段约定
+
+- 状态：已完成
+- 范围：继续推进任务 02，补充本地 PostgreSQL 重建脚本，并明确核心状态字段的统一取值
+- 结果：
+  - 新增 `scripts/reset_local_db.sql`，支持本地开发阶段删表重建
+  - 在项目说明中明确 `import_jobs.status` 与 `documents.status` 的推荐状态值
+  - 保持任务 02 聚焦本地初始化方案，不引入迁移机制
+- 当前状态约定：
+  - `import_jobs.status`：`pending`、`running`、`success`、`failed`、`skipped`、`cancelled`
+  - `documents.status`：`active`、`failed`、`deleted`
+- 遗留问题：
+  - 状态值目前仅在脚本和说明层面约定，尚未接入实际写库代码
+  - 是否在 SQL 层增加 `CHECK` 约束，后续可根据实现稳定性再决定
+- 下一步：
+  - 继续完成任务 02 的收尾检查
+  - 准备进入任务 03 或任务 05 的数据库接入部分
+
+### 2026-04-25
+
 #### 记录 003：完成子任务 01 工程骨架与目录结构初始化
 
 - 状态：已完成
@@ -55,7 +97,7 @@
   - 新增基于 `Python + pyproject.toml + uv` 的项目基础配置
   - 建立 `src` 布局和分层目录结构，覆盖 `cli`、`application`、`domain`、`ingestion`、`infrastructure`
   - 预留 `mindwiki import file <path>` 与 `mindwiki import dir <path>` 的 CLI 命令入口
-  - 新增 `migrations` 目录，为后续 PostgreSQL 迁移脚本预留位置
+  - 新增本地开发所需的基础目录结构，为后续 PostgreSQL 初始化脚本预留位置
   - 新增最小测试文件，验证 CLI 参数解析
   - 完成本地最小可运行校验
 - 验证结果：
@@ -64,9 +106,9 @@
 - 遗留问题：
   - 还未安装实际运行依赖
   - CLI 当前仅为骨架，尚未接入真实导入逻辑
-  - 数据库迁移和实体落库尚未开始
+  - 本地数据库初始化脚本和实体落库尚未开始
 - 下一步：
-  - 开始任务 02：建立 PostgreSQL 迁移脚本与基础表
+  - 开始任务 02：建立 PostgreSQL 本地初始化脚本与基础表
 
 ### 2026-04-25
 
@@ -86,7 +128,7 @@
   - 为后续目录导入、PDF 导入、检索和生成提供稳定数据基础
 - 分步任务拆解：
   - 任务 01：初始化工程骨架与目录结构
-  - 任务 02：建立 PostgreSQL 迁移脚本与基础表
+  - 任务 02：建立 PostgreSQL 本地初始化脚本与基础表
   - 任务 03：实现 `mindwiki import file <path>` 的 CLI 入口
   - 任务 04：实现 Markdown 单文件读取与基础解析
   - 任务 05：实现 `source/document/section/chunk/import_job` 写入流程
@@ -99,7 +141,7 @@
   - 最后再继续扩展目录导入和 PDF
 - 遗留问题：
   - 当前技术栈和目录组织尚未最终确定
-  - PostgreSQL 接入方式和迁移工具尚未选定
+  - PostgreSQL 本地初始化方式和接入细节尚未落地
   - Markdown 解析粒度需要在实现时根据实际内容再收敛
 - 下一步：
   - 开始任务 01：初始化工程骨架与目录结构
@@ -149,7 +191,7 @@
 | 任务 | 内容 | 状态 | 备注 |
 | --- | --- | --- | --- |
 | 01 | 初始化工程骨架与目录结构 | 已完成 | 已完成最小可运行骨架 |
-| 02 | 建立 PostgreSQL 迁移脚本与基础表 | 未开始 | 先覆盖核心表 |
+| 02 | 建立 PostgreSQL 本地初始化脚本与基础表 | 已完成 | 已完成本地建表与重建脚本 |
 | 03 | 实现 CLI 单文件导入入口 | 未开始 | `mindwiki import file <path>` |
 | 04 | 实现 Markdown 单文件读取与基础解析 | 未开始 | 暂不包含 PDF |
 | 05 | 实现核心实体入库流程 | 未开始 | `sources/documents/sections/chunks/import_jobs` |

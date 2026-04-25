@@ -20,3 +20,20 @@ Common commands:
 uv sync
 uv run mindwiki --help
 ```
+
+Local PostgreSQL schema initialization:
+
+```bash
+psql "$MINDWIKI_DATABASE_URL" -f scripts/init_local_db.sql
+```
+
+Reset local PostgreSQL schema:
+
+```bash
+psql "$MINDWIKI_DATABASE_URL" -f scripts/reset_local_db.sql
+```
+
+Current status conventions:
+
+- `import_jobs.status`: `pending`, `running`, `success`, `failed`, `skipped`, `cancelled`
+- `documents.status`: `active`, `failed`, `deleted`
