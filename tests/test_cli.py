@@ -8,6 +8,7 @@ from mindwiki.application.import_service import (
 )
 from mindwiki.cli.main import build_parser
 from mindwiki.cli.main import main
+from mindwiki.ingestion.markdown import parse_markdown
 
 
 def test_parser_accepts_import_file_command() -> None:
@@ -84,5 +85,50 @@ def test_main_accepts_single_markdown_file(tmp_path: Path, capsys) -> None:
 
     assert exit_code == 0
     assert "Single-file import request accepted." in captured.out
+    assert "title=Notes" in captured.out
+    assert "sections=1" in captured.out
     assert "tags=work" in captured.out
     assert "source_note=study" in captured.out
+
+
+def test_parse_markdown_extracts_frontmatter_and_sections(tmp_path: Path) -> None:
+    file_path = tmp_path / "rag-notes.md"
+    file_path.write_text(
+        (
+            "---\n"
+            "title: RAG Notes\n"
+            "tags:\n"
+            "  - rag\n"
+            "  - retrieval\n"
+            "---\n\n"
+            "# Overview\n\n"
+            "RAG combines retrieval and generation.\n\n"
+            "## Retrieval\n\n"
+            "Retrieval finds evidence.\n"
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_markdown(file_path)
+
+    assert parsed.frontmatter["title"] == "RAG Notes"
+    assert parsed.frontmatter["tags"] == ["rag", "retrieval"]
+    assert parsed.title_candidates[0].value == "RAG Notes"
+    assert len(parsed.sections) == 2
+    assert parsed.sections[0].title == "Overview"
+    assert parsed.sections[1].title == "Retrieval"
+
+
+def test_parse_markdown_keeps_anonymous_intro_section(tmp_path: Path) -> None:
+    file_path = tmp_path / "journal.md"
+    file_path.write_text(
+        "Intro paragraph.\n\n# Topic\n\nDetails here.\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_markdown(file_path)
+
+    assert len(parsed.sections) == 2
+    assert parsed.sections[0].title is None
+    assert parsed.sections[0].content == "Intro paragraph."
+    assert parsed.sections[1].title == "Topic"

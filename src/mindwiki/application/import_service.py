@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+from mindwiki.ingestion.markdown import parse_markdown
+
 
 SUPPORTED_FILE_TYPES = {".md", ".pdf"}
 
@@ -54,10 +56,30 @@ class ImportService:
                 ),
             )
 
+        if suffix == ".md":
+            parsed = parse_markdown(path)
+            title = parsed.title_candidates[0].value if parsed.title_candidates else path.stem
+            details = [
+                "Single-file import request accepted.",
+                f"path={path}",
+                f"type={suffix}",
+                f"title={title}",
+                f"sections={len(parsed.sections)}",
+            ]
+
+            if request.tags:
+                details.append(f"tags={','.join(request.tags)}")
+
+            if request.source_note:
+                details.append(f"source_note={request.source_note}")
+
+            return CommandResult(exit_code=0, message=" ".join(details))
+
         details = [
             "Single-file import request accepted.",
             f"path={path}",
             f"type={suffix}",
+            "parsing=pending",
         ]
 
         if request.tags:

@@ -49,6 +49,9 @@ Current CLI behavior:
 
 - `import file` checks whether the path exists, whether it is a file, and whether the file type is supported
 - supported file types are currently `.md` and `.pdf`
+- `.md` files are currently read and parsed with a minimal Markdown pipeline
+- current Markdown parsing includes UTF-8 loading, newline normalization, simple frontmatter extraction, title candidate extraction, and heading-based section splitting
+- successful Markdown imports currently print a lightweight parsing summary such as `title=...` and `sections=...`
 - `import dir` checks whether the path exists and whether it is a directory
 - `--tag` can be repeated
 - `--source-note` is optional
@@ -56,8 +59,9 @@ Current CLI behavior:
 
 Current limitation:
 
-- the CLI currently accepts and validates import requests, but it does not yet parse Markdown/PDF content or write to PostgreSQL
-- real ingestion, parsing, and persistence will be added in the next development tasks
+- `.pdf` files are currently accepted by the CLI, but PDF parsing is not implemented yet
+- the CLI does not yet write parsed content to PostgreSQL
+- real persistence and import job creation will be added in the next development tasks
 
 Local PostgreSQL schema initialization:
 
