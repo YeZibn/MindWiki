@@ -47,6 +47,30 @@
 
 ### 2026-04-25
 
+#### 记录 006：完成子任务 03 CLI 单文件导入入口
+
+- 状态：已完成
+- 范围：完成第一个开发模块中“任务 03：实现 `mindwiki import file <path>` 的 CLI 单文件导入入口”
+- 结果：
+  - 将 CLI 从纯骨架提升为可执行入口
+  - 为 `import file` 补充 `--tag` 和 `--source-note` 参数
+  - 为 `import dir` 补充 `--recursive`、`--tag` 和 `--source-note` 参数，保持命令接口一致
+  - 在应用层新增导入请求对象，承接 CLI 参数
+  - 实现单文件路径校验，包括文件是否存在、是否为文件、文件类型是否支持
+  - 当前支持的单文件导入类型校验为 `.md` 和 `.pdf`
+  - 完成基础错误提示与成功结果输出
+- 验证结果：
+  - `python3 -m pytest tests/test_cli.py` 通过
+  - `PYTHONPATH=src python3 -m mindwiki import file <markdown-path> --tag work --source-note study` 可正常返回成功结果
+  - 缺失文件场景可正常返回错误信息
+- 遗留问题：
+  - 当前入口只完成请求校验与参数承接，尚未进入真实 Markdown / PDF 解析
+  - 当前成功结果仍属于“请求已接受”，尚未创建真实导入任务或写入数据库
+- 下一步：
+  - 进入任务 04：实现 Markdown 单文件读取与基础解析
+
+### 2026-04-25
+
 #### 记录 005：完成子任务 02 本地 PostgreSQL 初始化脚本与基础表
 
 - 状态：已完成
@@ -192,7 +216,7 @@
 | --- | --- | --- | --- |
 | 01 | 初始化工程骨架与目录结构 | 已完成 | 已完成最小可运行骨架 |
 | 02 | 建立 PostgreSQL 本地初始化脚本与基础表 | 已完成 | 已完成本地建表与重建脚本 |
-| 03 | 实现 CLI 单文件导入入口 | 未开始 | `mindwiki import file <path>` |
+| 03 | 实现 CLI 单文件导入入口 | 已完成 | 已支持参数承接与基础校验 |
 | 04 | 实现 Markdown 单文件读取与基础解析 | 未开始 | 暂不包含 PDF |
 | 05 | 实现核心实体入库流程 | 未开始 | `sources/documents/sections/chunks/import_jobs` |
 | 06 | 实现导入任务状态流转与错误记录 | 未开始 | 最小状态闭环 |

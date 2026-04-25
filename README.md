@@ -21,6 +21,44 @@ uv sync
 uv run mindwiki --help
 ```
 
+## CLI Usage
+
+Current available commands:
+
+```bash
+PYTHONPATH=src python3 -m mindwiki --help
+PYTHONPATH=src python3 -m mindwiki import file --help
+PYTHONPATH=src python3 -m mindwiki import dir --help
+```
+
+Single-file import:
+
+```bash
+PYTHONPATH=src python3 -m mindwiki import file ./notes/example.md
+PYTHONPATH=src python3 -m mindwiki import file ./notes/example.md --tag work --tag rag --source-note "learning notes"
+```
+
+Directory import:
+
+```bash
+PYTHONPATH=src python3 -m mindwiki import dir ./notes
+PYTHONPATH=src python3 -m mindwiki import dir ./notes --recursive --tag work --source-note "knowledge directory"
+```
+
+Current CLI behavior:
+
+- `import file` checks whether the path exists, whether it is a file, and whether the file type is supported
+- supported file types are currently `.md` and `.pdf`
+- `import dir` checks whether the path exists and whether it is a directory
+- `--tag` can be repeated
+- `--source-note` is optional
+- `--recursive` is only used for `import dir`
+
+Current limitation:
+
+- the CLI currently accepts and validates import requests, but it does not yet parse Markdown/PDF content or write to PostgreSQL
+- real ingestion, parsing, and persistence will be added in the next development tasks
+
 Local PostgreSQL schema initialization:
 
 ```bash
