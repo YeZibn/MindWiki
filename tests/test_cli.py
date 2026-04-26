@@ -3,9 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
-from mindwiki.application.import_models import ImportFileRequest
+from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.application.import_service import (
     ImportService,
+    scan_directory_files,
 )
 from mindwiki.cli.main import build_parser
 from mindwiki.cli.main import main
@@ -66,6 +67,38 @@ def test_import_file_returns_error_for_unsupported_type(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Unsupported file type" in result.message
+
+
+def test_scan_directory_files_filters_supported_types(tmp_path: Path) -> None:
+    (tmp_path / "notes.md").write_text("# Notes", encoding="utf-8")
+    (tmp_path / "paper.pdf").write_text("pdf", encoding="utf-8")
+    (tmp_path / "image.png").write_text("png", encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "deep.md").write_text("# Deep", encoding="utf-8")
+
+    result = scan_directory_files(tmp_path)
+
+    assert [path.name for path in result.scanned_files] == ["image.png", "notes.md", "paper.pdf"]
+    assert [path.name for path in result.supported_files] == ["notes.md", "paper.pdf"]
+    assert [path.name for path in result.unsupported_files] == ["image.png"]
+
+
+def test_import_directory_returns_scan_summary(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text("# A", encoding="utf-8")
+    (tmp_path / "b.pdf").write_text("pdf", encoding="utf-8")
+    (tmp_path / "c.txt").write_text("txt", encoding="utf-8")
+    service = ImportService()
+
+    result = service.import_directory(
+        ImportDirectoryRequest(path=tmp_path, recursive=False)
+    )
+
+    assert result.exit_code == 0
+    assert "scanned_files=3" in result.message
+    assert "supported_files=2" in result.message
+    assert "unsupported_files=1" in result.message
+    assert "supported_names=a.md,b.pdf" in result.message
+    assert "unsupported_names=c.txt" in result.message
 
 
 def test_main_accepts_single_markdown_file(tmp_path: Path, capsys, monkeypatch) -> None:

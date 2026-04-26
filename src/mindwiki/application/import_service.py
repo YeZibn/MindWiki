@@ -25,6 +25,13 @@ class CommandResult:
     message: str
 
 
+@dataclass(slots=True)
+class DirectoryScanResult:
+    scanned_files: tuple[Path, ...]
+    supported_files: tuple[Path, ...]
+    unsupported_files: tuple[Path, ...]
+
+
 class ImportService:
     """Coordinates CLI-facing import requests."""
 
@@ -171,11 +178,27 @@ class ImportService:
                 message=f"Path is not a directory: {path}",
             )
 
+        scan_result = scan_directory_files(path)
         details = [
             "Directory import request accepted.",
             f"path={path}",
             f"recursive={'true' if request.recursive else 'false'}",
+            f"scanned_files={len(scan_result.scanned_files)}",
+            f"supported_files={len(scan_result.supported_files)}",
+            f"unsupported_files={len(scan_result.unsupported_files)}",
         ]
+
+        if scan_result.supported_files:
+            details.append(
+                "supported_names="
+                + ",".join(file_path.name for file_path in scan_result.supported_files)
+            )
+
+        if scan_result.unsupported_files:
+            details.append(
+                "unsupported_names="
+                + ",".join(file_path.name for file_path in scan_result.unsupported_files)
+            )
 
         if request.tags:
             details.append(f"tags={','.join(request.tags)}")
@@ -193,3 +216,27 @@ def normalize_tags(tags: Sequence[str]) -> tuple[str, ...]:
     """Normalize CLI tag inputs by trimming blanks and removing empty items."""
 
     return tuple(tag.strip() for tag in tags if tag.strip())
+
+
+def scan_directory_files(path: Path) -> DirectoryScanResult:
+    """Scan a directory and split top-level files into supported and unsupported groups."""
+
+    scanned_files: list[Path] = []
+    supported_files: list[Path] = []
+    unsupported_files: list[Path] = []
+
+    for entry in sorted(path.iterdir(), key=lambda item: item.name):
+        if not entry.is_file():
+            continue
+
+        scanned_files.append(entry)
+        if entry.suffix.lower() in SUPPORTED_FILE_TYPES:
+            supported_files.append(entry)
+        else:
+            unsupported_files.append(entry)
+
+    return DirectoryScanResult(
+        scanned_files=tuple(scanned_files),
+        supported_files=tuple(supported_files),
+        unsupported_files=tuple(unsupported_files),
+    )
