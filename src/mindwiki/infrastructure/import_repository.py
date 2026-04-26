@@ -147,6 +147,12 @@ class PostgresImportRepository:
                 )
 
                 for file_path in supported_files:
+                    content_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                    is_unchanged = self._document_with_same_path_and_hash_exists(
+                        cursor,
+                        file_path=file_path,
+                        content_hash=content_hash,
+                    )
                     child_payload = json.dumps(
                         {
                             "path": str(file_path),
@@ -156,6 +162,8 @@ class PostgresImportRepository:
                             "source_note": request.source_note,
                             "detected_file_type": file_path.suffix.lower() or None,
                             "parent_job_id": str(parent_job_id),
+                            "content_hash": content_hash,
+                            "skip_reason": "content_unchanged" if is_unchanged else None,
                         },
                         ensure_ascii=True,
                     )
@@ -163,10 +171,11 @@ class PostgresImportRepository:
                         cursor,
                         path=file_path,
                         input_payload=child_payload,
-                        status="pending",
-                        now=None,
+                        status="skipped" if is_unchanged else "pending",
+                        now=now if is_unchanged else None,
                         job_type="file",
                         parent_job_id=parent_job_id,
+                        error_message="content_unchanged" if is_unchanged else None,
                     )
                     child_job_ids.append(child_job_id)
 
@@ -351,6 +360,26 @@ class PostgresImportRepository:
         )
         row = cursor.fetchone()
         return row["id"]
+
+    @staticmethod
+    def _document_with_same_path_and_hash_exists(
+        cursor: psycopg.Cursor[dict],
+        *,
+        file_path: Path,
+        content_hash: str,
+    ) -> bool:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM documents
+            WHERE file_path = %s
+              AND content_hash = %s
+              AND deleted_at IS NULL
+            LIMIT 1
+            """,
+            (str(file_path), content_hash),
+        )
+        return cursor.fetchone() is not None
 
     @staticmethod
     def _insert_document(
