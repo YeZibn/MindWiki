@@ -17,6 +17,53 @@
 
 ### 2026-04-26
 
+#### 记录 020：完成模块 02 任务 07 目录导入本地验收脚本
+
+- 状态：已完成
+- 范围：完成模块 02 中“任务 07：补充目录导入本地验收脚本”
+- 结果：
+  - 新增 `scripts/verify_local_directory_import.py`
+  - 新脚本会创建临时目录，并同时构造：
+    - 已支持的 Markdown 文件
+    - 已支持但未解析的 PDF 文件
+    - 不支持文件
+    - 空 Markdown 文件
+  - 脚本会先执行一次单文件 Markdown 导入，制造“同路径同内容”的增量基线
+  - 随后执行 `mindwiki import dir ...`
+  - 脚本会校验：
+    - 目录导入 CLI 统计摘要字段
+    - `batch_job_id` 对应的子任务状态和错误原因
+    - `sources`、`import_jobs`、`documents`、`sections`、`chunks` 的增量变化
+  - `README.md` 与 `scripts/README.md` 已补充脚本说明
+- 验证结果：
+  - `python3 -m py_compile scripts/verify_local_directory_import.py` 通过
+  - `python3 -m pytest tests/test_cli.py` 通过，当前共 16 个测试
+  - 真实执行 `PYTHONPATH=src /opt/miniconda3/bin/python3 scripts/verify_local_directory_import.py` 成功，退出码为 `0`
+  - 本次真实目录导入返回：
+    - `batch_job_id = f2ae7a74-76a7-43d1-a60d-292f1b07d995`
+    - `pending_jobs = 1`
+    - `skipped_jobs = 3`
+    - `skipped_unsupported = 1`
+    - `skipped_empty = 1`
+    - `skipped_unchanged = 1`
+  - 针对该批次的数据库回查结果为：
+    - `a.md -> skipped / content_unchanged`
+    - `b.pdf -> pending`
+    - `c.txt -> skipped / unsupported_file_type`
+    - `d.md -> skipped / empty_file`
+  - 本次真实验收的总增量为：
+    - `sources +1`
+    - `import_jobs +6`
+    - `documents +1`
+    - `sections +2`
+    - `chunks +2`
+- 遗留问题：
+  - 脚本当前仍沿用现有 CLI 文本输出解析方式，对含空格字段的 `parsed_output` 仍是近似摘要，但不影响本次目录导入验收判断
+  - 验收脚本当前只覆盖“目录扫描与子任务创建”阶段，尚未覆盖后续真正的批量消费执行
+- 下一步：
+  - 模块 02 的 7 个任务已全部完成
+  - 下一阶段可开始整理模块 03 的目标与任务拆分
+
 #### 记录 019：完成模块 02 任务 06 目录导入统计摘要输出
 
 - 状态：已完成

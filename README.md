@@ -96,6 +96,7 @@ Minimal end-to-end verification:
 
 ```bash
 PYTHONPATH=src python3 scripts/verify_local_import.py
+PYTHONPATH=src python3 scripts/verify_local_directory_import.py
 ```
 
 The verification script will:
@@ -104,6 +105,14 @@ The verification script will:
 - run `mindwiki import file ...`
 - query `sources`, `import_jobs`, `documents`, `sections`, and `chunks`
 - print a JSON summary and exit with code `0` only if the expected row deltas are observed
+
+The directory verification script will:
+
+- create a temporary directory with supported, unsupported, and empty files
+- import one Markdown file first to create an unchanged-content baseline
+- run `mindwiki import dir ...`
+- verify `pending_jobs`, `skipped_jobs`, `skipped_unsupported`, `skipped_empty`, and `skipped_unchanged`
+- query child jobs for the generated `batch_job_id`
 
 Current status conventions:
 
