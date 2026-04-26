@@ -178,15 +178,47 @@ class ImportService:
                 message=f"Path is not a directory: {path}",
             )
 
-        scan_result = scan_directory_files(path)
+        scan_result = scan_directory_files(path, recursive=request.recursive)
         details = [
             "Directory import request accepted.",
             f"path={path}",
             f"recursive={'true' if request.recursive else 'false'}",
             f"scanned_files={len(scan_result.scanned_files)}",
-            f"supported_files={len(scan_result.supported_files)}",
-            f"unsupported_files={len(scan_result.unsupported_files)}",
         ]
+
+        if self._repository is not None:
+            try:
+                parent_job_id, child_job_ids = self._repository.create_directory_import_jobs(
+                    request,
+                    scan_result.supported_files,
+                )
+            except psycopg.Error as exc:
+                return CommandResult(
+                    exit_code=1,
+                    message=(
+                        "Directory import failed. "
+                        f"path={path} "
+                        f"reason=database_error:{exc.__class__.__name__}"
+                    ),
+                )
+            details.extend(
+                [
+                    f"supported_files={len(scan_result.supported_files)}",
+                    f"unsupported_files={len(scan_result.unsupported_files)}",
+                    "job_persistence=stored",
+                    f"batch_job_id={parent_job_id}",
+                    f"child_jobs={len(child_job_ids)}",
+                ]
+            )
+        else:
+            details.extend(
+                [
+                    f"supported_files={len(scan_result.supported_files)}",
+                    f"unsupported_files={len(scan_result.unsupported_files)}",
+                    "job_persistence=skipped",
+                    "reason=database_url_missing",
+                ]
+            )
 
         if scan_result.supported_files:
             details.append(
@@ -218,17 +250,18 @@ def normalize_tags(tags: Sequence[str]) -> tuple[str, ...]:
     return tuple(tag.strip() for tag in tags if tag.strip())
 
 
-def scan_directory_files(path: Path) -> DirectoryScanResult:
-    """Scan a directory and split top-level files into supported and unsupported groups."""
+def scan_directory_files(path: Path, *, recursive: bool) -> DirectoryScanResult:
+    """Scan a directory and split files into supported and unsupported groups."""
 
     scanned_files: list[Path] = []
     supported_files: list[Path] = []
     unsupported_files: list[Path] = []
 
-    for entry in sorted(path.iterdir(), key=lambda item: item.name):
+    entries = sorted(path.rglob("*") if recursive else path.iterdir(), key=lambda item: str(item))
+
+    for entry in entries:
         if not entry.is_file():
             continue
-
         scanned_files.append(entry)
         if entry.suffix.lower() in SUPPORTED_FILE_TYPES:
             supported_files.append(entry)

@@ -76,22 +76,46 @@ def test_scan_directory_files_filters_supported_types(tmp_path: Path) -> None:
     (tmp_path / "nested").mkdir()
     (tmp_path / "nested" / "deep.md").write_text("# Deep", encoding="utf-8")
 
-    result = scan_directory_files(tmp_path)
+    result = scan_directory_files(tmp_path, recursive=False)
 
     assert [path.name for path in result.scanned_files] == ["image.png", "notes.md", "paper.pdf"]
     assert [path.name for path in result.supported_files] == ["notes.md", "paper.pdf"]
     assert [path.name for path in result.unsupported_files] == ["image.png"]
 
 
-def test_import_directory_returns_scan_summary(tmp_path: Path) -> None:
+def test_scan_directory_files_includes_nested_files_when_recursive(tmp_path: Path) -> None:
+    (tmp_path / "notes.md").write_text("# Notes", encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "deep.md").write_text("# Deep", encoding="utf-8")
+    (tmp_path / "nested" / "image.png").write_text("png", encoding="utf-8")
+
+    result = scan_directory_files(tmp_path, recursive=True)
+
+    assert [path.relative_to(tmp_path).as_posix() for path in result.scanned_files] == [
+        "nested/deep.md",
+        "nested/image.png",
+        "notes.md",
+    ]
+    assert [path.relative_to(tmp_path).as_posix() for path in result.supported_files] == [
+        "nested/deep.md",
+        "notes.md",
+    ]
+    assert [path.relative_to(tmp_path).as_posix() for path in result.unsupported_files] == [
+        "nested/image.png",
+    ]
+
+
+def test_import_directory_returns_scan_summary(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "a.md").write_text("# A", encoding="utf-8")
     (tmp_path / "b.pdf").write_text("pdf", encoding="utf-8")
     (tmp_path / "c.txt").write_text("txt", encoding="utf-8")
+    monkeypatch.delenv("MINDWIKI_DATABASE_URL", raising=False)
+    monkeypatch.setattr(settings_module, "DOTENV_PATH", tmp_path / ".env")
+    settings_module.clear_settings_cache()
+    request = ImportDirectoryRequest(path=tmp_path, recursive=False)
     service = ImportService()
 
-    result = service.import_directory(
-        ImportDirectoryRequest(path=tmp_path, recursive=False)
-    )
+    result = service.import_directory(request)
 
     assert result.exit_code == 0
     assert "scanned_files=3" in result.message
@@ -99,6 +123,48 @@ def test_import_directory_returns_scan_summary(tmp_path: Path) -> None:
     assert "unsupported_files=1" in result.message
     assert "supported_names=a.md,b.pdf" in result.message
     assert "unsupported_names=c.txt" in result.message
+
+
+def test_import_directory_respects_recursive_flag(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "a.md").write_text("# A", encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "b.md").write_text("# B", encoding="utf-8")
+    monkeypatch.delenv("MINDWIKI_DATABASE_URL", raising=False)
+    monkeypatch.setattr(settings_module, "DOTENV_PATH", tmp_path / ".env")
+    settings_module.clear_settings_cache()
+    service = ImportService()
+
+    non_recursive = service.import_directory(
+        ImportDirectoryRequest(path=tmp_path, recursive=False)
+    )
+    recursive = service.import_directory(
+        ImportDirectoryRequest(path=tmp_path, recursive=True)
+    )
+
+    assert "scanned_files=1" in non_recursive.message
+    assert "supported_names=a.md" in non_recursive.message
+    assert "scanned_files=2" in recursive.message
+    assert "supported_names=a.md,b.md" in recursive.message
+
+
+def test_import_directory_persists_batch_and_child_jobs(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text("# A", encoding="utf-8")
+    (tmp_path / "b.pdf").write_text("pdf", encoding="utf-8")
+    (tmp_path / "c.txt").write_text("txt", encoding="utf-8")
+    repository = RecordingImportRepository()
+    service = ImportService(repository=repository)
+
+    result = service.import_directory(
+        ImportDirectoryRequest(path=tmp_path, recursive=False, tags=("work",), source_note="batch"),
+    )
+
+    assert result.exit_code == 0
+    assert "job_persistence=stored" in result.message
+    assert "batch_job_id=00000000-0000-0000-0000-000000000010" in result.message
+    assert "child_jobs=2" in result.message
+    assert repository.last_directory_request is not None
+    assert repository.last_directory_request.path == tmp_path
+    assert [path.name for path in repository.last_supported_files] == ["a.md", "b.pdf"]
 
 
 def test_main_accepts_single_markdown_file(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -225,9 +291,26 @@ def test_import_file_marks_job_failed_on_parse_error(tmp_path: Path, monkeypatch
 class RecordingImportRepository:
     def __init__(self) -> None:
         self.last_request: ImportFileRequest | None = None
+        self.last_directory_request: ImportDirectoryRequest | None = None
+        self.last_supported_files: tuple[Path, ...] = ()
         self.last_parsed = None
         self.created_job_type: str | None = None
         self.status_updates: list[tuple[str, str, str | None]] = []
+
+    def create_directory_import_jobs(
+        self,
+        request: ImportDirectoryRequest,
+        supported_files: tuple[Path, ...],
+    ) -> tuple[UUID, tuple[UUID, ...]]:
+        self.last_directory_request = request
+        self.last_supported_files = supported_files
+        return (
+            UUID("00000000-0000-0000-0000-000000000010"),
+            (
+                UUID("00000000-0000-0000-0000-000000000011"),
+                UUID("00000000-0000-0000-0000-000000000012"),
+            ),
+        )
 
     def create_import_job(
         self,

@@ -13,7 +13,7 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
-from mindwiki.application.import_models import ImportFileRequest
+from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.ingestion.markdown import ParsedMarkdownDocument
 from mindwiki.infrastructure.database import get_database_url
 
@@ -28,6 +28,12 @@ class PersistedImportResult:
 
 
 class ImportRepository(Protocol):
+    def create_directory_import_jobs(
+        self,
+        request: ImportDirectoryRequest,
+        supported_files: tuple[Path, ...],
+    ) -> tuple[UUID, tuple[UUID, ...]]: ...
+
     def create_import_job(
         self,
         request: ImportFileRequest,
@@ -94,6 +100,65 @@ class PostgresImportRepository:
                 )
             connection.commit()
 
+    def create_directory_import_jobs(
+        self,
+        request: ImportDirectoryRequest,
+        supported_files: tuple[Path, ...],
+    ) -> tuple[UUID, tuple[UUID, ...]]:
+        path = request.path.expanduser().resolve()
+        now = datetime.now()
+        parent_payload = json.dumps(
+            {
+                "path": str(path),
+                "import_type": "dir",
+                "recursive": request.recursive,
+                "tags": list(request.tags),
+                "source_note": request.source_note,
+                "supported_file_count": len(supported_files),
+            },
+            ensure_ascii=True,
+        )
+        child_job_ids: list[UUID] = []
+
+        with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
+            with connection.cursor() as cursor:
+                parent_job_id = self._insert_import_job(
+                    cursor,
+                    path=path,
+                    input_payload=parent_payload,
+                    status="success",
+                    now=now,
+                    job_type="dir",
+                    parent_job_id=None,
+                )
+
+                for file_path in supported_files:
+                    child_payload = json.dumps(
+                        {
+                            "path": str(file_path),
+                            "import_type": "file",
+                            "recursive": request.recursive,
+                            "tags": list(request.tags),
+                            "source_note": request.source_note,
+                            "detected_file_type": file_path.suffix.lower() or None,
+                            "parent_job_id": str(parent_job_id),
+                        },
+                        ensure_ascii=True,
+                    )
+                    child_job_id = self._insert_import_job(
+                        cursor,
+                        path=file_path,
+                        input_payload=child_payload,
+                        status="pending",
+                        now=None,
+                        job_type="file",
+                        parent_job_id=parent_job_id,
+                    )
+                    child_job_ids.append(child_job_id)
+            connection.commit()
+
+        return parent_job_id, tuple(child_job_ids)
+
         return PersistedImportResult(
             import_job_id=import_job_id,
             source_id=source_id,
@@ -127,6 +192,8 @@ class PostgresImportRepository:
                     input_payload=input_payload,
                     status="pending",
                     now=None,
+                    job_type="file",
+                    parent_job_id=None,
                 )
             connection.commit()
 
@@ -192,10 +259,13 @@ class PostgresImportRepository:
         input_payload: str,
         status: str,
         now: datetime | None,
+        job_type: str,
+        parent_job_id: UUID | None,
     ) -> UUID:
         cursor.execute(
             """
             INSERT INTO import_jobs (
+                parent_job_id,
                 job_type,
                 status,
                 input_path,
@@ -204,10 +274,19 @@ class PostgresImportRepository:
                 started_at,
                 finished_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            ("file", status, str(path), input_payload, 0, now, now if status == "success" else None),
+            (
+                parent_job_id,
+                job_type,
+                status,
+                str(path),
+                input_payload,
+                0,
+                now,
+                now if status == "success" else None,
+            ),
         )
         row = cursor.fetchone()
         return row["id"]
