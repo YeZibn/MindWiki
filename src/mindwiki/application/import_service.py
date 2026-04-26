@@ -11,6 +11,7 @@ import psycopg
 from mindwiki.ingestion.markdown import parse_markdown
 from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.infrastructure.import_repository import (
+    DirectoryImportJobSummary,
     ImportRepository,
     build_import_repository,
 )
@@ -189,7 +190,7 @@ class ImportService:
 
         if self._repository is not None:
             try:
-                parent_job_id, child_job_ids = self._repository.create_directory_import_jobs(
+                parent_job_id, child_job_ids, job_summary = self._repository.create_directory_import_jobs(
                     request,
                     scan_result.supported_files,
                     scan_result.unsupported_files,
@@ -215,6 +216,13 @@ class ImportService:
                 ]
             )
         else:
+            job_summary = DirectoryImportJobSummary(
+                pending_jobs=len(scan_result.supported_files),
+                skipped_jobs=len(scan_result.unsupported_files) + len(scan_result.empty_files),
+                skipped_unsupported=len(scan_result.unsupported_files),
+                skipped_empty=len(scan_result.empty_files),
+                skipped_unchanged=0,
+            )
             details.extend(
                 [
                     f"supported_files={len(scan_result.supported_files)}",
@@ -224,6 +232,16 @@ class ImportService:
                     "reason=database_url_missing",
                 ]
             )
+
+        details.extend(
+            [
+                f"pending_jobs={job_summary.pending_jobs}",
+                f"skipped_jobs={job_summary.skipped_jobs}",
+                f"skipped_unsupported={job_summary.skipped_unsupported}",
+                f"skipped_empty={job_summary.skipped_empty}",
+                f"skipped_unchanged={job_summary.skipped_unchanged}",
+            ]
+        )
 
         if scan_result.supported_files:
             details.append(

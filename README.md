@@ -55,6 +55,7 @@ Current CLI behavior:
 - if `MINDWIKI_DATABASE_URL` is configured and the local schema has been initialized, Markdown imports will also write `sources`, `import_jobs`, `documents`, `sections`, and `chunks` to PostgreSQL
 - `import dir` checks whether the path exists and whether it is a directory
 - `import dir` currently creates a batch job plus file child jobs; supported files with the same `file_path` and same `content_hash` as an existing document are marked as `skipped` with `error_message=content_unchanged`
+- `import dir` currently prints a lightweight summary including `pending_jobs`, `skipped_jobs`, `skipped_unsupported`, `skipped_empty`, and `skipped_unchanged`
 - `--tag` can be repeated
 - `--source-note` is optional
 - `--recursive` is only used for `import dir`

@@ -27,6 +27,15 @@ class PersistedImportResult:
     chunk_count: int
 
 
+@dataclass(slots=True)
+class DirectoryImportJobSummary:
+    pending_jobs: int
+    skipped_jobs: int
+    skipped_unsupported: int
+    skipped_empty: int
+    skipped_unchanged: int
+
+
 class ImportRepository(Protocol):
     def create_directory_import_jobs(
         self,
@@ -34,7 +43,7 @@ class ImportRepository(Protocol):
         supported_files: tuple[Path, ...],
         unsupported_files: tuple[Path, ...],
         empty_files: tuple[Path, ...],
-    ) -> tuple[UUID, tuple[UUID, ...]]: ...
+    ) -> tuple[UUID, tuple[UUID, ...], DirectoryImportJobSummary]: ...
 
     def create_import_job(
         self,
@@ -116,7 +125,7 @@ class PostgresImportRepository:
         supported_files: tuple[Path, ...],
         unsupported_files: tuple[Path, ...],
         empty_files: tuple[Path, ...],
-    ) -> tuple[UUID, tuple[UUID, ...]]:
+    ) -> tuple[UUID, tuple[UUID, ...], DirectoryImportJobSummary]:
         path = request.path.expanduser().resolve()
         now = datetime.now()
         parent_payload = json.dumps(
@@ -133,6 +142,10 @@ class PostgresImportRepository:
             ensure_ascii=True,
         )
         child_job_ids: list[UUID] = []
+        pending_jobs = 0
+        skipped_unsupported = 0
+        skipped_empty = 0
+        skipped_unchanged = 0
 
         with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
             with connection.cursor() as cursor:
@@ -177,6 +190,10 @@ class PostgresImportRepository:
                         parent_job_id=parent_job_id,
                         error_message="content_unchanged" if is_unchanged else None,
                     )
+                    if is_unchanged:
+                        skipped_unchanged += 1
+                    else:
+                        pending_jobs += 1
                     child_job_ids.append(child_job_id)
 
                 for file_path in unsupported_files:
@@ -203,6 +220,7 @@ class PostgresImportRepository:
                         parent_job_id=parent_job_id,
                         error_message="unsupported_file_type",
                     )
+                    skipped_unsupported += 1
                     child_job_ids.append(child_job_id)
 
                 for file_path in empty_files:
@@ -229,10 +247,18 @@ class PostgresImportRepository:
                         parent_job_id=parent_job_id,
                         error_message="empty_file",
                     )
+                    skipped_empty += 1
                     child_job_ids.append(child_job_id)
             connection.commit()
 
-        return parent_job_id, tuple(child_job_ids)
+        summary = DirectoryImportJobSummary(
+            pending_jobs=pending_jobs,
+            skipped_jobs=skipped_unsupported + skipped_empty + skipped_unchanged,
+            skipped_unsupported=skipped_unsupported,
+            skipped_empty=skipped_empty,
+            skipped_unchanged=skipped_unchanged,
+        )
+        return parent_job_id, tuple(child_job_ids), summary
 
     def create_import_job(
         self,

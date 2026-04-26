@@ -12,6 +12,7 @@ from mindwiki.cli.main import build_parser
 from mindwiki.cli.main import main
 from mindwiki.ingestion.markdown import parse_markdown
 from mindwiki.infrastructure.import_repository import PersistedImportResult
+from mindwiki.infrastructure.import_repository import DirectoryImportJobSummary
 from mindwiki.infrastructure import settings as settings_module
 
 
@@ -125,6 +126,11 @@ def test_import_directory_returns_scan_summary(tmp_path: Path, monkeypatch) -> N
     assert "supported_files=2" in result.message
     assert "unsupported_files=1" in result.message
     assert "empty_files=1" in result.message
+    assert "pending_jobs=2" in result.message
+    assert "skipped_jobs=2" in result.message
+    assert "skipped_unsupported=1" in result.message
+    assert "skipped_empty=1" in result.message
+    assert "skipped_unchanged=0" in result.message
     assert "supported_names=a.md,b.pdf" in result.message
     assert "unsupported_names=c.txt" in result.message
     assert "empty_names=d.md" in result.message
@@ -168,6 +174,11 @@ def test_import_directory_persists_batch_and_child_jobs(tmp_path: Path) -> None:
     assert "job_persistence=stored" in result.message
     assert "batch_job_id=00000000-0000-0000-0000-000000000010" in result.message
     assert "child_jobs=4" in result.message
+    assert "pending_jobs=2" in result.message
+    assert "skipped_jobs=2" in result.message
+    assert "skipped_unsupported=1" in result.message
+    assert "skipped_empty=1" in result.message
+    assert "skipped_unchanged=0" in result.message
     assert repository.last_directory_request is not None
     assert repository.last_directory_request.path == tmp_path
     assert [path.name for path in repository.last_supported_files] == ["a.md", "b.pdf"]
@@ -188,6 +199,11 @@ def test_import_directory_keeps_changed_files_pending_and_skips_unchanged(tmp_pa
 
     assert result.exit_code == 0
     assert "child_jobs=2" in result.message
+    assert "pending_jobs=1" in result.message
+    assert "skipped_jobs=1" in result.message
+    assert "skipped_unsupported=0" in result.message
+    assert "skipped_empty=0" in result.message
+    assert "skipped_unchanged=1" in result.message
     assert repository.last_supported_files == (tmp_path / "new.pdf", tmp_path / "same.md")
     assert repository.unchanged_files == {tmp_path / "same.md"}
 
@@ -331,15 +347,21 @@ class RecordingImportRepository:
         supported_files: tuple[Path, ...],
         unsupported_files: tuple[Path, ...],
         empty_files: tuple[Path, ...],
-    ) -> tuple[UUID, tuple[UUID, ...]]:
+    ) -> tuple[UUID, tuple[UUID, ...], DirectoryImportJobSummary]:
         self.last_directory_request = request
         self.last_supported_files = supported_files
         self.last_unsupported_files = unsupported_files
         self.last_empty_files = empty_files
         child_ids: list[UUID] = []
+        pending_jobs = 0
+        skipped_unchanged = 0
         next_id = 11
-        for _ in supported_files:
+        for path in supported_files:
             child_ids.append(UUID(f"00000000-0000-0000-0000-0000000000{next_id}"))
+            if path in self.unchanged_files:
+                skipped_unchanged += 1
+            else:
+                pending_jobs += 1
             next_id += 1
         for _ in unsupported_files:
             child_ids.append(UUID(f"00000000-0000-0000-0000-0000000000{next_id}"))
@@ -350,6 +372,13 @@ class RecordingImportRepository:
         return (
             UUID("00000000-0000-0000-0000-000000000010"),
             tuple(child_ids),
+            DirectoryImportJobSummary(
+                pending_jobs=pending_jobs,
+                skipped_jobs=len(unsupported_files) + len(empty_files) + skipped_unchanged,
+                skipped_unsupported=len(unsupported_files),
+                skipped_empty=len(empty_files),
+                skipped_unchanged=skipped_unchanged,
+            ),
         )
 
     def create_import_job(
