@@ -52,6 +52,7 @@ Current CLI behavior:
 - `.md` files are currently read and parsed with a minimal Markdown pipeline
 - current Markdown parsing includes UTF-8 loading, newline normalization, simple frontmatter extraction, title candidate extraction, and heading-based section splitting
 - successful Markdown imports currently print a lightweight parsing summary such as `title=...` and `sections=...`
+- if `MINDWIKI_DATABASE_URL` is configured and the local schema has been initialized, Markdown imports will also write `sources`, `import_jobs`, `documents`, `sections`, and `chunks` to PostgreSQL
 - `import dir` checks whether the path exists and whether it is a directory
 - `--tag` can be repeated
 - `--source-note` is optional
@@ -60,19 +61,33 @@ Current CLI behavior:
 Current limitation:
 
 - `.pdf` files are currently accepted by the CLI, but PDF parsing is not implemented yet
-- the CLI does not yet write parsed content to PostgreSQL
+- if `MINDWIKI_DATABASE_URL` is missing, persistence is skipped and the CLI will report `reason=database_url_missing`
 - real persistence and import job creation will be added in the next development tasks
+
+PostgreSQL persistence setup:
+
+```bash
+cp .env.example .env
+# edit .env and set your real username/password/database
+export MINDWIKI_DATABASE_URL='postgresql://user:password@localhost:5432/mindwiki'
+/Library/PostgreSQL/16/bin/psql 'postgresql://user:password@localhost:5432/postgres' -c 'CREATE DATABASE mindwiki;'
+/Library/PostgreSQL/16/bin/psql "$MINDWIKI_DATABASE_URL" -f scripts/init_local_db.sql
+PYTHONPATH=src python3 -m mindwiki import file ./notes/example.md
+```
+
+The application will automatically read `MINDWIKI_DATABASE_URL` from the project root `.env` file if the shell environment variable is not set.
+Shell commands such as `psql` do not read `.env` automatically, so export the variable in the shell when you run schema scripts manually.
 
 Local PostgreSQL schema initialization:
 
 ```bash
-psql "$MINDWIKI_DATABASE_URL" -f scripts/init_local_db.sql
+/Library/PostgreSQL/16/bin/psql "$MINDWIKI_DATABASE_URL" -f scripts/init_local_db.sql
 ```
 
 Reset local PostgreSQL schema:
 
 ```bash
-psql "$MINDWIKI_DATABASE_URL" -f scripts/reset_local_db.sql
+/Library/PostgreSQL/16/bin/psql "$MINDWIKI_DATABASE_URL" -f scripts/reset_local_db.sql
 ```
 
 Current status conventions:

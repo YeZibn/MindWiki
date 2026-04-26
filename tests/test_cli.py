@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import UUID
 
+from mindwiki.application.import_models import ImportFileRequest
 from mindwiki.application.import_service import (
-    ImportFileRequest,
     ImportService,
 )
 from mindwiki.cli.main import build_parser
 from mindwiki.cli.main import main
 from mindwiki.ingestion.markdown import parse_markdown
+from mindwiki.infrastructure.import_repository import PersistedImportResult
+from mindwiki.infrastructure import settings as settings_module
 
 
 def test_parser_accepts_import_file_command() -> None:
@@ -87,6 +90,7 @@ def test_main_accepts_single_markdown_file(tmp_path: Path, capsys) -> None:
     assert "Single-file import request accepted." in captured.out
     assert "title=Notes" in captured.out
     assert "sections=1" in captured.out
+    assert "persistence=skipped" in captured.out
     assert "tags=work" in captured.out
     assert "source_note=study" in captured.out
 
@@ -132,3 +136,65 @@ def test_parse_markdown_keeps_anonymous_intro_section(tmp_path: Path) -> None:
     assert parsed.sections[0].title is None
     assert parsed.sections[0].content == "Intro paragraph."
     assert parsed.sections[1].title == "Topic"
+
+
+def test_import_file_persists_markdown_when_repository_is_available(tmp_path: Path) -> None:
+    file_path = tmp_path / "notes.md"
+    file_path.write_text("# Notes\n\nHello.\n", encoding="utf-8")
+    repository = RecordingImportRepository()
+    service = ImportService(repository=repository)
+
+    result = service.import_file(
+        ImportFileRequest(
+            path=file_path,
+            tags=("work",),
+            source_note="study",
+        )
+    )
+
+    assert result.exit_code == 0
+    assert "persistence=stored" in result.message
+    assert "document_id=00000000-0000-0000-0000-000000000003" in result.message
+    assert repository.last_request is not None
+    assert repository.last_request.path == file_path
+    assert repository.last_parsed is not None
+    assert repository.last_parsed.title_candidates[0].value == "Notes"
+
+
+class RecordingImportRepository:
+    def __init__(self) -> None:
+        self.last_request: ImportFileRequest | None = None
+        self.last_parsed = None
+
+    def persist_markdown_import(
+        self,
+        request: ImportFileRequest,
+        parsed,
+    ) -> PersistedImportResult:
+        self.last_request = request
+        self.last_parsed = parsed
+        return PersistedImportResult(
+            import_job_id=UUID("00000000-0000-0000-0000-000000000001"),
+            source_id=UUID("00000000-0000-0000-0000-000000000002"),
+            document_id=UUID("00000000-0000-0000-0000-000000000003"),
+            section_count=len(parsed.sections),
+            chunk_count=len([section for section in parsed.sections if section.content]),
+        )
+
+
+def test_settings_load_database_url_from_dotenv(tmp_path: Path, monkeypatch) -> None:
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text(
+        "MINDWIKI_DATABASE_URL=postgresql://tester:secret@localhost:5432/mindwiki\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("MINDWIKI_DATABASE_URL", raising=False)
+    monkeypatch.setattr(settings_module, "DOTENV_PATH", dotenv_path)
+    settings_module.clear_settings_cache()
+
+    settings = settings_module.get_settings()
+
+    assert settings.database_url == "postgresql://tester:secret@localhost:5432/mindwiki"
+
+    settings_module.clear_settings_cache()

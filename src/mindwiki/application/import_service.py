@@ -6,25 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+import psycopg
+
 from mindwiki.ingestion.markdown import parse_markdown
+from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
+from mindwiki.infrastructure.import_repository import (
+    ImportRepository,
+    build_import_repository,
+)
 
 
 SUPPORTED_FILE_TYPES = {".md", ".pdf"}
-
-
-@dataclass(slots=True)
-class ImportFileRequest:
-    path: Path
-    tags: tuple[str, ...] = ()
-    source_note: str | None = None
-
-
-@dataclass(slots=True)
-class ImportDirectoryRequest:
-    path: Path
-    recursive: bool = False
-    tags: tuple[str, ...] = ()
-    source_note: str | None = None
 
 
 @dataclass(slots=True)
@@ -35,6 +27,9 @@ class CommandResult:
 
 class ImportService:
     """Coordinates CLI-facing import requests."""
+
+    def __init__(self, repository: ImportRepository | None = None) -> None:
+        self._repository = repository if repository is not None else build_import_repository()
 
     def import_file(self, request: ImportFileRequest) -> CommandResult:
         path = request.path.expanduser().resolve()
@@ -67,6 +62,26 @@ class ImportService:
                 f"sections={len(parsed.sections)}",
             ]
 
+            if self._repository is not None:
+                try:
+                    persisted = self._repository.persist_markdown_import(request, parsed)
+                except psycopg.Error as exc:
+                    details.append("persistence=skipped")
+                    details.append(f"reason=database_error:{exc.__class__.__name__}")
+                else:
+                    details.extend(
+                        [
+                            "persistence=stored",
+                            f"import_job_id={persisted.import_job_id}",
+                            f"source_id={persisted.source_id}",
+                            f"document_id={persisted.document_id}",
+                            f"chunks={persisted.chunk_count}",
+                        ]
+                    )
+            else:
+                details.append("persistence=skipped")
+                details.append("reason=database_url_missing")
+
             if request.tags:
                 details.append(f"tags={','.join(request.tags)}")
 
@@ -80,6 +95,7 @@ class ImportService:
             f"path={path}",
             f"type={suffix}",
             "parsing=pending",
+            "persistence=skipped",
         ]
 
         if request.tags:

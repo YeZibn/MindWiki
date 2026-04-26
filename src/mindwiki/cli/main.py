@@ -6,9 +6,8 @@ import argparse
 from pathlib import Path
 from typing import Sequence
 
+from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.application.import_service import (
-    ImportDirectoryRequest,
-    ImportFileRequest,
     ImportService,
     normalize_tags,
 )

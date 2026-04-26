@@ -45,6 +45,79 @@
 
 ## 开发记录
 
+### 2026-04-26
+
+#### 记录 010：完成本地 PostgreSQL 初始化与真实导入验收
+
+- 状态：已完成
+- 范围：完成本地 PostgreSQL 环境接通、schema 初始化和真实 Markdown 导入验收
+- 结果：
+  - 已确认本机 `psql` 可用，路径为 PostgreSQL 16 安装目录
+  - 已补项目根目录 `.env`，本地数据库连接已生效
+  - 已创建本地 `mindwiki` 数据库
+  - 已执行 `scripts/init_local_db.sql` 完成 schema 初始化
+  - 已完成真实 Markdown 导入验收，CLI 返回 `persistence=stored`
+  - 已在同一数据库上下文中验证 `sources`、`import_jobs`、`documents`、`sections`、`chunks` 均有写入记录
+- 验证结果：
+  - 本地真实导入成功返回 `import_job_id`、`source_id`、`document_id`
+  - 验收后当前记录数为：
+    - `sources = 2`
+    - `import_jobs = 2`
+    - `documents = 2`
+    - `sections = 3`
+    - `chunks = 3`
+- 遗留问题：
+  - tags 尚未落库到 `tags/document_tags`
+  - PDF 解析与入库尚未实现
+  - 导入任务状态流转仍需在任务 06 中继续完善
+- 下一步：
+  - 进入任务 06：实现导入任务状态流转与错误记录
+
+### 2026-04-26
+
+#### 记录 009：补充 PostgreSQL 本地环境配置支持
+
+- 状态：已完成
+- 范围：补充项目侧的 PostgreSQL 本地环境变量配置能力
+- 结果：
+  - 新增 `.env.example`，提供 `MINDWIKI_DATABASE_URL` 示例
+  - 设置层支持从项目根目录 `.env` 自动读取数据库连接串
+  - `.gitignore` 已忽略 `.env`
+  - README 已补充 PostgreSQL 本地配置步骤，并明确 `psql` 需要单独导出环境变量
+- 验证结果：
+  - `python3 -m pytest tests/test_cli.py` 通过
+  - 新增测试验证 `.env` 中的 `MINDWIKI_DATABASE_URL` 可被应用读取
+- 遗留问题：
+  - 当前 `.env` 还未写入真实连接串
+  - 当前环境中无法直接完成本地 PostgreSQL 服务连通性验收
+- 下一步：
+  - 补真实 `MINDWIKI_DATABASE_URL`
+  - 初始化本地 schema 并执行一次真实导入验收
+
+### 2026-04-26
+
+#### 记录 008：完成子任务 05 核心实体入库流程
+
+- 状态：已完成
+- 范围：完成第一个开发模块中“任务 05：实现核心实体入库流程”
+- 结果：
+  - 新增 PostgreSQL 导入仓储层，对接本地 `sources`、`import_jobs`、`documents`、`sections`、`chunks` 5 张核心表
+  - 新增 Markdown 导入持久化流程，当前会基于解析结果写入 source、import job、document、section 和 chunk 记录
+  - 导入时会生成文档内容哈希，并保存来源路径、来源备注和输入载荷
+  - section 当前按 Markdown 解析结果入库，chunk 当前采用“每个有内容的 section 生成一个 chunk”的最小策略
+  - 当未配置 `MINDWIKI_DATABASE_URL` 时，CLI 会明确返回 `persistence=skipped reason=database_url_missing`
+  - 当仓储可用时，CLI 会返回 `import_job_id`、`source_id`、`document_id` 等持久化结果摘要
+- 验证结果：
+  - `python3 -m pytest tests/test_cli.py` 通过
+  - 未配置数据库连接串时，Markdown 导入可稳定返回跳过持久化的原因
+  - 通过注入式测试验证了“解析结果进入持久化层”的调用路径
+- 遗留问题：
+  - 当前环境未配置本地 PostgreSQL 连接串，尚未对真实数据库执行写入验收
+  - tags 当前仍只保留在输入载荷中，尚未落 `tags/document_tags`
+  - chunk 切分仍为最小实现，后续需要按 chunk 规则独立演进
+- 下一步：
+  - 进入任务 06：实现导入任务状态流转与错误记录
+
 ### 2026-04-25
 
 #### 记录 007：完成子任务 04 Markdown 单文件读取与基础解析
@@ -243,6 +316,6 @@
 | 02 | 建立 PostgreSQL 本地初始化脚本与基础表 | 已完成 | 已完成本地建表与重建脚本 |
 | 03 | 实现 CLI 单文件导入入口 | 已完成 | 已支持参数承接与基础校验 |
 | 04 | 实现 Markdown 单文件读取与基础解析 | 已完成 | 已支持 frontmatter、标题候选和 section 切分 |
-| 05 | 实现核心实体入库流程 | 未开始 | `sources/documents/sections/chunks/import_jobs` |
+| 05 | 实现核心实体入库流程 | 已完成 | 已接入 PostgreSQL 仓储与最小落库路径 |
 | 06 | 实现导入任务状态流转与错误记录 | 未开始 | 最小状态闭环 |
 | 07 | 补充最小验证测试或验收脚本 | 未开始 | 支撑后续迭代 |
