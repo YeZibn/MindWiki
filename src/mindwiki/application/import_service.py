@@ -11,6 +11,7 @@ import psycopg
 from mindwiki.ingestion.markdown import parse_markdown
 from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.infrastructure.import_repository import (
+    DirectoryChildJob,
     DirectoryImportJobSummary,
     ImportRepository,
     build_import_repository,
@@ -34,6 +35,13 @@ class DirectoryScanResult:
     empty_files: tuple[Path, ...]
 
 
+@dataclass(slots=True)
+class DirectoryExecutionSummary:
+    success_jobs: int = 0
+    failed_jobs: int = 0
+    skipped_jobs: int = 0
+
+
 class ImportService:
     """Coordinates CLI-facing import requests."""
 
@@ -42,7 +50,6 @@ class ImportService:
 
     def import_file(self, request: ImportFileRequest) -> CommandResult:
         path = request.path.expanduser().resolve()
-        import_job_id = None
 
         if not path.exists():
             return CommandResult(exit_code=1, message=f"File not found: {path}")
@@ -62,80 +69,7 @@ class ImportService:
             )
 
         if suffix == ".md":
-            if self._repository is not None:
-                try:
-                    import_job_id = self._repository.create_import_job(request, suffix)
-                    self._repository.update_import_job_status(import_job_id, "running")
-                except psycopg.Error as exc:
-                    return CommandResult(
-                        exit_code=1,
-                        message=(
-                            "Single-file import failed. "
-                            f"path={path} type={suffix} "
-                            f"reason=database_error:{exc.__class__.__name__}"
-                        ),
-                    )
-
-            try:
-                parsed = parse_markdown(path)
-            except Exception as exc:
-                if self._repository is not None and import_job_id is not None:
-                    self._safe_mark_failed(import_job_id, exc)
-                return CommandResult(
-                    exit_code=1,
-                    message=(
-                        "Single-file import failed. "
-                        f"path={path} type={suffix} "
-                        f"reason=parse_error:{exc.__class__.__name__}"
-                    ),
-                )
-
-            title = parsed.title_candidates[0].value if parsed.title_candidates else path.stem
-            details = [
-                "Single-file import request accepted.",
-                f"path={path}",
-                f"type={suffix}",
-                f"title={title}",
-                f"sections={len(parsed.sections)}",
-            ]
-
-            if self._repository is not None:
-                try:
-                    persisted = self._repository.persist_markdown_import(import_job_id, request, parsed)
-                    self._repository.update_import_job_status(import_job_id, "success")
-                except psycopg.Error as exc:
-                    if import_job_id is not None:
-                        self._safe_mark_failed(import_job_id, exc)
-                    return CommandResult(
-                        exit_code=1,
-                        message=(
-                            "Single-file import failed. "
-                            f"path={path} type={suffix} "
-                            f"reason=database_error:{exc.__class__.__name__} "
-                            f"import_job_id={import_job_id}"
-                        ),
-                    )
-                else:
-                    details.extend(
-                        [
-                            "persistence=stored",
-                            f"import_job_id={persisted.import_job_id}",
-                            f"source_id={persisted.source_id}",
-                            f"document_id={persisted.document_id}",
-                            f"chunks={persisted.chunk_count}",
-                        ]
-                    )
-            else:
-                details.append("persistence=skipped")
-                details.append("reason=database_url_missing")
-
-            if request.tags:
-                details.append(f"tags={','.join(request.tags)}")
-
-            if request.source_note:
-                details.append(f"source_note={request.source_note}")
-
-            return CommandResult(exit_code=0, message=" ".join(details))
+            return self._import_markdown_file(request)
 
         details = [
             "Single-file import request accepted.",
@@ -168,6 +102,133 @@ class ImportService:
         except psycopg.Error:
             pass
 
+    def _import_markdown_file(
+        self,
+        request: ImportFileRequest,
+        *,
+        import_job_id: object | None = None,
+    ) -> CommandResult:
+        path = request.path.expanduser().resolve()
+        suffix = path.suffix.lower()
+        active_import_job_id = import_job_id
+
+        if self._repository is not None:
+            try:
+                if active_import_job_id is None:
+                    active_import_job_id = self._repository.create_import_job(request, suffix)
+                self._repository.update_import_job_status(active_import_job_id, "running")
+            except psycopg.Error as exc:
+                return CommandResult(
+                    exit_code=1,
+                    message=(
+                        "Single-file import failed. "
+                        f"path={path} type={suffix} "
+                        f"reason=database_error:{exc.__class__.__name__}"
+                    ),
+                )
+
+        try:
+            parsed = parse_markdown(path)
+        except Exception as exc:
+            if self._repository is not None and active_import_job_id is not None:
+                self._safe_mark_failed(active_import_job_id, exc)
+            return CommandResult(
+                exit_code=1,
+                message=(
+                    "Single-file import failed. "
+                    f"path={path} type={suffix} "
+                    f"reason=parse_error:{exc.__class__.__name__}"
+                ),
+            )
+
+        title = parsed.title_candidates[0].value if parsed.title_candidates else path.stem
+        details = [
+            "Single-file import request accepted.",
+            f"path={path}",
+            f"type={suffix}",
+            f"title={title}",
+            f"sections={len(parsed.sections)}",
+        ]
+
+        if self._repository is not None:
+            try:
+                persisted = self._repository.persist_markdown_import(active_import_job_id, request, parsed)
+                self._repository.update_import_job_status(active_import_job_id, "success")
+            except psycopg.Error as exc:
+                if active_import_job_id is not None:
+                    self._safe_mark_failed(active_import_job_id, exc)
+                return CommandResult(
+                    exit_code=1,
+                    message=(
+                        "Single-file import failed. "
+                        f"path={path} type={suffix} "
+                        f"reason=database_error:{exc.__class__.__name__} "
+                        f"import_job_id={active_import_job_id}"
+                    ),
+                )
+            else:
+                details.extend(
+                    [
+                        "persistence=stored",
+                        f"import_job_id={persisted.import_job_id}",
+                        f"source_id={persisted.source_id}",
+                        f"document_id={persisted.document_id}",
+                        f"chunks={persisted.chunk_count}",
+                    ]
+                )
+        else:
+            details.append("persistence=skipped")
+            details.append("reason=database_url_missing")
+
+        if request.tags:
+            details.append(f"tags={','.join(request.tags)}")
+
+        if request.source_note:
+            details.append(f"source_note={request.source_note}")
+
+        return CommandResult(exit_code=0, message=" ".join(details))
+
+    def _execute_directory_child_jobs(
+        self,
+        request: ImportDirectoryRequest,
+        child_jobs: tuple[DirectoryChildJob, ...],
+    ) -> DirectoryExecutionSummary:
+        summary = DirectoryExecutionSummary()
+
+        if self._repository is None:
+            return summary
+
+        for child_job in child_jobs:
+            if child_job.status != "pending":
+                continue
+
+            child_request = ImportFileRequest(
+                path=child_job.path,
+                tags=request.tags,
+                source_note=request.source_note,
+            )
+
+            if child_job.detected_file_type == ".md":
+                result = self._import_markdown_file(
+                    child_request,
+                    import_job_id=child_job.import_job_id,
+                )
+                if result.exit_code == 0:
+                    summary.success_jobs += 1
+                else:
+                    summary.failed_jobs += 1
+                continue
+
+            if child_job.detected_file_type == ".pdf":
+                self._repository.update_import_job_status(
+                    child_job.import_job_id,
+                    "skipped",
+                    error_message="pdf_parsing_not_implemented",
+                )
+                summary.skipped_jobs += 1
+
+        return summary
+
     def import_directory(self, request: ImportDirectoryRequest) -> CommandResult:
         path = request.path.expanduser().resolve()
 
@@ -190,12 +251,13 @@ class ImportService:
 
         if self._repository is not None:
             try:
-                parent_job_id, child_job_ids, job_summary = self._repository.create_directory_import_jobs(
+                parent_job_id, child_jobs, job_summary = self._repository.create_directory_import_jobs(
                     request,
                     scan_result.supported_files,
                     scan_result.unsupported_files,
                     scan_result.empty_files,
                 )
+                execution_summary = self._execute_directory_child_jobs(request, child_jobs)
             except psycopg.Error as exc:
                 return CommandResult(
                     exit_code=1,
@@ -212,7 +274,10 @@ class ImportService:
                     f"empty_files={len(scan_result.empty_files)}",
                     "job_persistence=stored",
                     f"batch_job_id={parent_job_id}",
-                    f"child_jobs={len(child_job_ids)}",
+                    f"child_jobs={len(child_jobs)}",
+                    f"success_jobs={execution_summary.success_jobs}",
+                    f"failed_jobs={execution_summary.failed_jobs}",
+                    f"executed_skipped_jobs={execution_summary.skipped_jobs}",
                 ]
             )
         else:
@@ -223,6 +288,7 @@ class ImportService:
                 skipped_empty=len(scan_result.empty_files),
                 skipped_unchanged=0,
             )
+            execution_summary = DirectoryExecutionSummary()
             details.extend(
                 [
                     f"supported_files={len(scan_result.supported_files)}",
@@ -230,6 +296,9 @@ class ImportService:
                     f"empty_files={len(scan_result.empty_files)}",
                     "job_persistence=skipped",
                     "reason=database_url_missing",
+                    f"success_jobs={execution_summary.success_jobs}",
+                    f"failed_jobs={execution_summary.failed_jobs}",
+                    f"executed_skipped_jobs={execution_summary.skipped_jobs}",
                 ]
             )
 

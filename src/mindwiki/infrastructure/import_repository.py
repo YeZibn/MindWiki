@@ -36,6 +36,15 @@ class DirectoryImportJobSummary:
     skipped_unchanged: int
 
 
+@dataclass(slots=True)
+class DirectoryChildJob:
+    import_job_id: UUID
+    path: Path
+    detected_file_type: str | None
+    status: str
+    error_message: str | None
+
+
 class ImportRepository(Protocol):
     def create_directory_import_jobs(
         self,
@@ -43,7 +52,7 @@ class ImportRepository(Protocol):
         supported_files: tuple[Path, ...],
         unsupported_files: tuple[Path, ...],
         empty_files: tuple[Path, ...],
-    ) -> tuple[UUID, tuple[UUID, ...], DirectoryImportJobSummary]: ...
+    ) -> tuple[UUID, tuple[DirectoryChildJob, ...], DirectoryImportJobSummary]: ...
 
     def create_import_job(
         self,
@@ -125,7 +134,7 @@ class PostgresImportRepository:
         supported_files: tuple[Path, ...],
         unsupported_files: tuple[Path, ...],
         empty_files: tuple[Path, ...],
-    ) -> tuple[UUID, tuple[UUID, ...], DirectoryImportJobSummary]:
+    ) -> tuple[UUID, tuple[DirectoryChildJob, ...], DirectoryImportJobSummary]:
         path = request.path.expanduser().resolve()
         now = datetime.now()
         parent_payload = json.dumps(
@@ -141,7 +150,7 @@ class PostgresImportRepository:
             },
             ensure_ascii=True,
         )
-        child_job_ids: list[UUID] = []
+        child_jobs: list[DirectoryChildJob] = []
         pending_jobs = 0
         skipped_unsupported = 0
         skipped_empty = 0
@@ -194,7 +203,15 @@ class PostgresImportRepository:
                         skipped_unchanged += 1
                     else:
                         pending_jobs += 1
-                    child_job_ids.append(child_job_id)
+                    child_jobs.append(
+                        DirectoryChildJob(
+                            import_job_id=child_job_id,
+                            path=file_path,
+                            detected_file_type=file_path.suffix.lower() or None,
+                            status="skipped" if is_unchanged else "pending",
+                            error_message="content_unchanged" if is_unchanged else None,
+                        )
+                    )
 
                 for file_path in unsupported_files:
                     child_payload = json.dumps(
@@ -221,7 +238,15 @@ class PostgresImportRepository:
                         error_message="unsupported_file_type",
                     )
                     skipped_unsupported += 1
-                    child_job_ids.append(child_job_id)
+                    child_jobs.append(
+                        DirectoryChildJob(
+                            import_job_id=child_job_id,
+                            path=file_path,
+                            detected_file_type=file_path.suffix.lower() or None,
+                            status="skipped",
+                            error_message="unsupported_file_type",
+                        )
+                    )
 
                 for file_path in empty_files:
                     child_payload = json.dumps(
@@ -248,7 +273,15 @@ class PostgresImportRepository:
                         error_message="empty_file",
                     )
                     skipped_empty += 1
-                    child_job_ids.append(child_job_id)
+                    child_jobs.append(
+                        DirectoryChildJob(
+                            import_job_id=child_job_id,
+                            path=file_path,
+                            detected_file_type=file_path.suffix.lower() or None,
+                            status="skipped",
+                            error_message="empty_file",
+                        )
+                    )
             connection.commit()
 
         summary = DirectoryImportJobSummary(
@@ -258,7 +291,7 @@ class PostgresImportRepository:
             skipped_empty=skipped_empty,
             skipped_unchanged=skipped_unchanged,
         )
-        return parent_job_id, tuple(child_job_ids), summary
+        return parent_job_id, tuple(child_jobs), summary
 
     def create_import_job(
         self,
