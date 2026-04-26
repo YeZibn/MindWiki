@@ -90,6 +90,19 @@ Reset local PostgreSQL schema:
 /Library/PostgreSQL/16/bin/psql "$MINDWIKI_DATABASE_URL" -f scripts/reset_local_db.sql
 ```
 
+Minimal end-to-end verification:
+
+```bash
+PYTHONPATH=src python3 scripts/verify_local_import.py
+```
+
+The verification script will:
+
+- create a temporary Markdown file
+- run `mindwiki import file ...`
+- query `sources`, `import_jobs`, `documents`, `sections`, and `chunks`
+- print a JSON summary and exit with code `0` only if the expected row deltas are observed
+
 Current status conventions:
 
 - `import_jobs.status`: `pending`, `running`, `success`, `failed`, `skipped`, `cancelled`
