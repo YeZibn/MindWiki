@@ -32,6 +32,8 @@ class ImportRepository(Protocol):
         self,
         request: ImportDirectoryRequest,
         supported_files: tuple[Path, ...],
+        unsupported_files: tuple[Path, ...],
+        empty_files: tuple[Path, ...],
     ) -> tuple[UUID, tuple[UUID, ...]]: ...
 
     def create_import_job(
@@ -100,10 +102,20 @@ class PostgresImportRepository:
                 )
             connection.commit()
 
+        return PersistedImportResult(
+            import_job_id=import_job_id,
+            source_id=source_id,
+            document_id=document_id,
+            section_count=section_count,
+            chunk_count=chunk_count,
+        )
+
     def create_directory_import_jobs(
         self,
         request: ImportDirectoryRequest,
         supported_files: tuple[Path, ...],
+        unsupported_files: tuple[Path, ...],
+        empty_files: tuple[Path, ...],
     ) -> tuple[UUID, tuple[UUID, ...]]:
         path = request.path.expanduser().resolve()
         now = datetime.now()
@@ -115,6 +127,8 @@ class PostgresImportRepository:
                 "tags": list(request.tags),
                 "source_note": request.source_note,
                 "supported_file_count": len(supported_files),
+                "unsupported_file_count": len(unsupported_files),
+                "empty_file_count": len(empty_files),
             },
             ensure_ascii=True,
         )
@@ -155,17 +169,61 @@ class PostgresImportRepository:
                         parent_job_id=parent_job_id,
                     )
                     child_job_ids.append(child_job_id)
+
+                for file_path in unsupported_files:
+                    child_payload = json.dumps(
+                        {
+                            "path": str(file_path),
+                            "import_type": "file",
+                            "recursive": request.recursive,
+                            "tags": list(request.tags),
+                            "source_note": request.source_note,
+                            "detected_file_type": file_path.suffix.lower() or None,
+                            "parent_job_id": str(parent_job_id),
+                            "skip_reason": "unsupported_file_type",
+                        },
+                        ensure_ascii=True,
+                    )
+                    child_job_id = self._insert_import_job(
+                        cursor,
+                        path=file_path,
+                        input_payload=child_payload,
+                        status="skipped",
+                        now=now,
+                        job_type="file",
+                        parent_job_id=parent_job_id,
+                        error_message="unsupported_file_type",
+                    )
+                    child_job_ids.append(child_job_id)
+
+                for file_path in empty_files:
+                    child_payload = json.dumps(
+                        {
+                            "path": str(file_path),
+                            "import_type": "file",
+                            "recursive": request.recursive,
+                            "tags": list(request.tags),
+                            "source_note": request.source_note,
+                            "detected_file_type": file_path.suffix.lower() or None,
+                            "parent_job_id": str(parent_job_id),
+                            "skip_reason": "empty_file",
+                        },
+                        ensure_ascii=True,
+                    )
+                    child_job_id = self._insert_import_job(
+                        cursor,
+                        path=file_path,
+                        input_payload=child_payload,
+                        status="skipped",
+                        now=now,
+                        job_type="file",
+                        parent_job_id=parent_job_id,
+                        error_message="empty_file",
+                    )
+                    child_job_ids.append(child_job_id)
             connection.commit()
 
         return parent_job_id, tuple(child_job_ids)
-
-        return PersistedImportResult(
-            import_job_id=import_job_id,
-            source_id=source_id,
-            document_id=document_id,
-            section_count=section_count,
-            chunk_count=chunk_count,
-        )
 
     def create_import_job(
         self,
@@ -261,6 +319,7 @@ class PostgresImportRepository:
         now: datetime | None,
         job_type: str,
         parent_job_id: UUID | None,
+        error_message: str | None = None,
     ) -> UUID:
         cursor.execute(
             """
@@ -270,11 +329,12 @@ class PostgresImportRepository:
                 status,
                 input_path,
                 input_payload,
+                error_message,
                 retry_count,
                 started_at,
                 finished_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -283,9 +343,10 @@ class PostgresImportRepository:
                 status,
                 str(path),
                 input_payload,
+                error_message,
                 0,
                 now,
-                now if status == "success" else None,
+                now if status in {"success", "skipped"} else None,
             ),
         )
         row = cursor.fetchone()

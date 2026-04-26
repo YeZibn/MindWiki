@@ -30,6 +30,7 @@ class DirectoryScanResult:
     scanned_files: tuple[Path, ...]
     supported_files: tuple[Path, ...]
     unsupported_files: tuple[Path, ...]
+    empty_files: tuple[Path, ...]
 
 
 class ImportService:
@@ -191,6 +192,8 @@ class ImportService:
                 parent_job_id, child_job_ids = self._repository.create_directory_import_jobs(
                     request,
                     scan_result.supported_files,
+                    scan_result.unsupported_files,
+                    scan_result.empty_files,
                 )
             except psycopg.Error as exc:
                 return CommandResult(
@@ -205,6 +208,7 @@ class ImportService:
                 [
                     f"supported_files={len(scan_result.supported_files)}",
                     f"unsupported_files={len(scan_result.unsupported_files)}",
+                    f"empty_files={len(scan_result.empty_files)}",
                     "job_persistence=stored",
                     f"batch_job_id={parent_job_id}",
                     f"child_jobs={len(child_job_ids)}",
@@ -215,6 +219,7 @@ class ImportService:
                 [
                     f"supported_files={len(scan_result.supported_files)}",
                     f"unsupported_files={len(scan_result.unsupported_files)}",
+                    f"empty_files={len(scan_result.empty_files)}",
                     "job_persistence=skipped",
                     "reason=database_url_missing",
                 ]
@@ -230,6 +235,12 @@ class ImportService:
             details.append(
                 "unsupported_names="
                 + ",".join(file_path.name for file_path in scan_result.unsupported_files)
+            )
+
+        if scan_result.empty_files:
+            details.append(
+                "empty_names="
+                + ",".join(file_path.name for file_path in scan_result.empty_files)
             )
 
         if request.tags:
@@ -256,6 +267,7 @@ def scan_directory_files(path: Path, *, recursive: bool) -> DirectoryScanResult:
     scanned_files: list[Path] = []
     supported_files: list[Path] = []
     unsupported_files: list[Path] = []
+    empty_files: list[Path] = []
 
     entries = sorted(path.rglob("*") if recursive else path.iterdir(), key=lambda item: str(item))
 
@@ -263,7 +275,9 @@ def scan_directory_files(path: Path, *, recursive: bool) -> DirectoryScanResult:
         if not entry.is_file():
             continue
         scanned_files.append(entry)
-        if entry.suffix.lower() in SUPPORTED_FILE_TYPES:
+        if entry.stat().st_size == 0:
+            empty_files.append(entry)
+        elif entry.suffix.lower() in SUPPORTED_FILE_TYPES:
             supported_files.append(entry)
         else:
             unsupported_files.append(entry)
@@ -272,4 +286,5 @@ def scan_directory_files(path: Path, *, recursive: bool) -> DirectoryScanResult:
         scanned_files=tuple(scanned_files),
         supported_files=tuple(supported_files),
         unsupported_files=tuple(unsupported_files),
+        empty_files=tuple(empty_files),
     )
