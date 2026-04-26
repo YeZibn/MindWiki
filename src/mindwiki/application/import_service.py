@@ -9,6 +9,7 @@ from typing import Sequence
 import psycopg
 
 from mindwiki.ingestion.markdown import parse_markdown
+from mindwiki.ingestion.pdf import PdfReadError, PdfTextExtractionError, parse_pdf
 from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.infrastructure.import_repository import (
     DirectoryChildJob,
@@ -77,6 +78,49 @@ class ImportService:
 
         if suffix == ".md":
             return self._import_markdown_file(request)
+
+        if suffix == ".pdf":
+            try:
+                parsed = parse_pdf(path)
+            except PdfReadError:
+                return CommandResult(
+                    exit_code=1,
+                    message=(
+                        "Single-file import failed. "
+                        f"path={path} type={suffix} "
+                        "reason=pdf_read_failed"
+                    ),
+                )
+            except PdfTextExtractionError:
+                return CommandResult(
+                    exit_code=1,
+                    message=(
+                        "Single-file import failed. "
+                        f"path={path} type={suffix} "
+                        "reason=pdf_text_extraction_failed"
+                    ),
+                )
+
+            title = parsed.title_candidates[0].value if parsed.title_candidates else path.stem
+            details = [
+                "Single-file import request accepted.",
+                f"path={path}",
+                f"type={suffix}",
+                f"title={title}",
+                f"pages={parsed.page_count}",
+                f"sections={len(parsed.sections)}",
+                "parsing=completed",
+                "persistence=skipped",
+                "reason=pdf_persistence_not_implemented",
+            ]
+
+            if request.tags:
+                details.append(f"tags={','.join(request.tags)}")
+
+            if request.source_note:
+                details.append(f"source_note={request.source_note}")
+
+            return CommandResult(exit_code=0, message=" ".join(details))
 
         details = [
             "Single-file import request accepted.",

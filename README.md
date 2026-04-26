@@ -51,7 +51,9 @@ Current CLI behavior:
 - supported file types are currently `.md` and `.pdf`
 - `.md` files are currently read and parsed with a minimal Markdown pipeline
 - current Markdown parsing includes UTF-8 loading, newline normalization, simple frontmatter extraction, title candidate extraction, and heading-based section splitting
+- `.pdf` files are currently parsed with a minimal text-based PDF pipeline for copyable-text PDFs
 - successful Markdown imports currently print a lightweight parsing summary such as `title=...` and `sections=...`
+- successful PDF imports currently print a lightweight parsing summary such as `title=...`, `pages=...`, and `sections=...`
 - if `MINDWIKI_DATABASE_URL` is configured and the local schema has been initialized, Markdown imports will also write `sources`, `import_jobs`, `documents`, `sections`, and `chunks` to PostgreSQL
 - `import dir` checks whether the path exists and whether it is a directory
 - `import dir` currently creates a batch job plus file child jobs; supported files with the same `file_path` and same `content_hash` as an existing document are marked as `skipped` with `error_message=content_unchanged`
@@ -65,9 +67,10 @@ Current CLI behavior:
 
 Current limitation:
 
-- `.pdf` files are currently accepted by the CLI, but PDF parsing is not implemented yet
+- `.pdf` single-file parsing currently only supports copyable-text PDFs
+- `.pdf` files are not yet persisted into PostgreSQL
 - if `MINDWIKI_DATABASE_URL` is missing, persistence is skipped and the CLI will report `reason=database_url_missing`
-- real persistence and import job creation will be added in the next development tasks
+- PDF OCR and PDF persistence will be added in later development tasks
 
 PostgreSQL persistence setup:
 

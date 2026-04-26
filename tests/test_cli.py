@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from uuid import UUID
+from tempfile import TemporaryDirectory
 
 from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.application.import_service import (
@@ -11,10 +12,16 @@ from mindwiki.application.import_service import (
 from mindwiki.cli.main import build_parser
 from mindwiki.cli.main import main
 from mindwiki.ingestion.markdown import parse_markdown
+from mindwiki.ingestion.pdf import (
+    PdfTextExtractionError,
+    parse_pdf,
+)
 from mindwiki.infrastructure.import_repository import PersistedImportResult
 from mindwiki.infrastructure.import_repository import DirectoryImportJobSummary
 from mindwiki.infrastructure.import_repository import DirectoryChildJob
 from mindwiki.infrastructure import settings as settings_module
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 
 def test_parser_accepts_import_file_command() -> None:
@@ -69,6 +76,44 @@ def test_import_file_returns_error_for_unsupported_type(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Unsupported file type" in result.message
+
+
+def test_parse_pdf_extracts_page_sections(tmp_path: Path) -> None:
+    file_path = tmp_path / "notes.pdf"
+    write_text_pdf(
+        file_path,
+        [
+            "First page overview",
+            "Second page details",
+        ],
+    )
+
+    parsed = parse_pdf(file_path)
+
+    assert parsed.page_count == 2
+    assert parsed.title_candidates[0].value == "notes"
+    assert len(parsed.sections) == 2
+    assert parsed.sections[0].title == "Page 1"
+    assert parsed.sections[0].page_number == 1
+    assert parsed.sections[0].content == "First page overview"
+    assert parsed.sections[1].title == "Page 2"
+    assert parsed.sections[1].page_number == 2
+    assert parsed.sections[1].content == "Second page details"
+
+
+def test_parse_pdf_raises_when_text_extraction_is_empty(tmp_path: Path) -> None:
+    file_path = tmp_path / "empty.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=300, height=300)
+    with file_path.open("wb") as handle:
+        writer.write(handle)
+
+    try:
+        parse_pdf(file_path)
+    except PdfTextExtractionError:
+        pass
+    else:
+        raise AssertionError("Expected PdfTextExtractionError for blank PDF")
 
 
 def test_scan_directory_files_filters_supported_types(tmp_path: Path) -> None:
@@ -138,6 +183,47 @@ def test_import_directory_returns_scan_summary(tmp_path: Path, monkeypatch) -> N
     assert "supported_names=a.md,b.pdf" in result.message
     assert "unsupported_names=c.txt" in result.message
     assert "empty_names=d.md" in result.message
+
+
+def test_import_file_parses_pdf_and_returns_summary(tmp_path: Path, monkeypatch) -> None:
+    file_path = tmp_path / "paper.pdf"
+    write_text_pdf(file_path, ["PDF body"])
+    monkeypatch.delenv("MINDWIKI_DATABASE_URL", raising=False)
+    monkeypatch.setattr(settings_module, "DOTENV_PATH", tmp_path / ".env")
+    settings_module.clear_settings_cache()
+    service = ImportService()
+
+    result = service.import_file(
+        ImportFileRequest(path=file_path, tags=("work",), source_note="paper"),
+    )
+
+    assert result.exit_code == 0
+    assert "type=.pdf" in result.message
+    assert "title=paper" in result.message
+    assert "pages=1" in result.message
+    assert "sections=1" in result.message
+    assert "parsing=completed" in result.message
+    assert "persistence=skipped" in result.message
+    assert "reason=pdf_persistence_not_implemented" in result.message
+    assert "tags=work" in result.message
+    assert "source_note=paper" in result.message
+
+
+def test_import_file_returns_error_when_pdf_has_no_usable_text(tmp_path: Path, monkeypatch) -> None:
+    file_path = tmp_path / "scan.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=300, height=300)
+    with file_path.open("wb") as handle:
+        writer.write(handle)
+    monkeypatch.delenv("MINDWIKI_DATABASE_URL", raising=False)
+    monkeypatch.setattr(settings_module, "DOTENV_PATH", tmp_path / ".env")
+    settings_module.clear_settings_cache()
+    service = ImportService()
+
+    result = service.import_file(ImportFileRequest(path=file_path))
+
+    assert result.exit_code == 1
+    assert "reason=pdf_text_extraction_failed" in result.message
 
 
 def test_import_directory_respects_recursive_flag(tmp_path: Path, monkeypatch) -> None:
@@ -529,3 +615,31 @@ def test_settings_load_database_url_from_dotenv(tmp_path: Path, monkeypatch) -> 
     assert settings.database_url == "postgresql://tester:secret@localhost:5432/mindwiki"
 
     settings_module.clear_settings_cache()
+
+
+def write_text_pdf(path: Path, page_texts: list[str]) -> None:
+    writer = PdfWriter()
+
+    for page_text in page_texts:
+        page = writer.add_blank_page(width=300, height=300)
+        stream = DecodedStreamObject()
+        escaped_text = page_text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream.set_data(f"BT /F1 12 Tf 72 200 Td ({escaped_text}) Tj ET".encode("utf-8"))
+        font = DictionaryObject()
+        font.update(
+            {
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }
+        )
+        font_ref = writer._add_object(font)
+        resources = DictionaryObject()
+        fonts = DictionaryObject()
+        fonts[NameObject("/F1")] = font_ref
+        resources[NameObject("/Font")] = fonts
+        page[NameObject("/Resources")] = resources
+        page[NameObject("/Contents")] = writer._add_object(stream)
+
+    with path.open("wb") as handle:
+        writer.write(handle)

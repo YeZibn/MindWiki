@@ -17,6 +17,121 @@
 
 ### 2026-04-26
 
+#### 记录 026：完成模块 04 任务 02，实现 PDF 单文件读取与文本提取
+
+- 状态：已完成
+- 范围：完成模块 04 中“任务 02：实现 PDF 单文件读取与文本提取”
+- 结果：
+  - 新增 `src/mindwiki/ingestion/pdf.py`
+  - 当前已接入基于 `pypdf` 的最小 PDF 文本提取能力
+  - 当前 PDF 解析输出已对齐统一导入中间结构，包含：
+    - `title`
+    - `raw_text`
+    - `sections`
+    - `page_count`
+  - 当前采用“按页切 section”的最小策略：
+    - 每页生成一个 section
+    - `section.title = Page N`
+    - `section.content` 保存该页提取文本
+  - 当前无稳定标题时，`title` 回退为文件名
+  - `mindwiki import file <pdf>` 已不再返回旧的 `parsing=pending`
+  - 当前 PDF 单文件导入会返回：
+    - `pages=...`
+    - `sections=...`
+    - `parsing=completed`
+    - `reason=pdf_persistence_not_implemented`
+  - 当前失败语义已区分为：
+    - `pdf_read_failed`
+    - `pdf_text_extraction_failed`
+- 验证结果：
+  - `python3 -m pytest tests/test_cli.py` 通过，当前共 21 个测试
+  - `python3 -m py_compile src/mindwiki/ingestion/pdf.py src/mindwiki/application/import_service.py tests/test_cli.py` 通过
+  - 真实执行 PDF 单文件导入成功，返回：
+    - `type = .pdf`
+    - `title = sample`
+    - `pages = 1`
+    - `sections = 1`
+    - `parsing = completed`
+    - `reason = pdf_persistence_not_implemented`
+- 遗留问题：
+  - 当前 PDF 仍未接入 PostgreSQL 落库
+  - 当前目录导入执行阶段仍未真正消费 PDF 子任务
+  - 当前仅覆盖可复制文本 PDF，未纳入 OCR
+- 下一步：
+  - 进入模块 04 任务 03：将 PDF 接入统一导入落库链路
+
+#### 记录 025：完成模块 04 任务 01，明确 PDF 第一阶段解析策略
+
+- 状态：已完成
+- 范围：完成模块 04 中“任务 01：明确 PDF 第一阶段解析策略”
+- 结果：
+  - 明确第一阶段只支持“可复制文本 PDF”
+  - 判断标准不只看文件扩展名，而是实际能否提取出有效正文文本
+  - 当前阶段不纳入：
+    - OCR
+    - 图片型扫描 PDF
+    - 表格结构恢复
+    - 多栏版面重排优化
+    - 页眉页脚智能清洗
+  - 明确 PDF 第一阶段的最小解析结果将对齐现有统一导入中间结构：
+    - `title`
+    - `raw_text`
+    - `sections`
+    - 每个 `section.content`
+  - 明确当前阶段无稳定标题时，`title` 回退为文件名
+  - 明确当前阶段采用“按页切 section”的最小策略：
+    - 每页一个 section
+    - `section.title` 可为空，或使用 `Page N`
+    - `section.content` 保存该页文本
+  - 明确 PDF 执行失败语义：
+    - 可打开但无法提取有效文本，按 `failed` 处理
+    - 当前 OCR 未实现导致无法处理扫描版 PDF，按 `failed` 处理
+  - 明确当前阶段不再把已进入执行链路的 PDF 失败记为 `skipped`
+- 遗留问题：
+  - 具体采用哪一个 PDF 文本提取库，仍需在任务 02 实现时结合本地环境确认
+  - 现有 `sections/chunks` 结构中的页码承接方式，还需要在实现中进一步收敛
+- 下一步：
+  - 进入模块 04 任务 02：实现 PDF 单文件读取与文本提取
+
+#### 记录 024：确定模块 04 为 PDF 导入与解析 MVP
+
+- 状态：进行中
+- 范围：将第四个开发模块正式定义为“PDF 导入与解析 MVP”，在模块 03 已完成目录执行闭环的基础上，补齐 PDF 从 CLI 接收到真实落库的最小链路
+- 结果：
+  - 明确模块 04 不进入 OCR，也不直接跳到检索，而是先打通可复制文本 PDF 的最小导入能力
+  - 明确模块 04 的目标是“能执行 PDF 单文件导入、能让目录导入真实消费 PDF 子任务、能形成最小可落库结构、能保留最小定位信息、能提供本地验收链路”
+  - 明确当前阶段的 PDF 处理边界为：
+    - 只处理可复制文本 PDF
+    - 不处理 OCR
+    - 扫描版或图片版 PDF 当前允许失败或跳过，但需要给出明确原因
+  - 明确当前阶段的 PDF 结构策略为：
+    - 优先保证可入库、可追踪、可后续检索
+    - 第一版允许采用按页或连续正文的最小切分策略
+    - 没有稳定标题结构时，允许生成无标题 section
+- 模块目标：
+  - `mindwiki import file <pdf>` 能真正执行
+  - 目录导入执行阶段能真实消费 PDF 子任务
+  - PDF 能写入最小 `document / section / chunk` 结构
+  - 保留最小定位信息，为后续引用和检索做准备
+  - 提供 PDF 本地验收脚本和 README 说明
+- 分步任务拆解：
+  - 任务 01：明确 PDF 第一阶段解析策略
+  - 任务 02：实现 PDF 单文件读取与文本提取
+  - 任务 03：将 PDF 接入统一导入落库链路
+  - 任务 04：让目录导入执行阶段真正消费 PDF 子任务
+  - 任务 05：补 PDF 本地验收脚本与 README 说明
+- 当前建议执行顺序：
+  - 先确定 PDF 第一阶段解析边界
+  - 再补单文件读取与文本提取
+  - 然后接入统一落库链路
+  - 最后补目录执行和本地验收
+- 遗留问题：
+  - 当前代码路径里 `.pdf` 仍未进入真实解析链路
+  - PDF 页级定位字段如何在现有 `sections/chunks` 结构中最小承接，还需要实现时进一步收敛
+  - OCR 是否独立成后续模块，当前已暂定不纳入模块 04
+- 下一步：
+  - 开始模块 04 任务 01：明确 PDF 第一阶段解析策略
+
 #### 记录 023：完成模块 03 任务 04-05，补齐目录执行后汇总与验收链路
 
 - 状态：已完成
@@ -729,3 +844,13 @@
 | 03 | 为暂未实现解析的 PDF 明确执行策略 | 已完成 | 当前执行阶段标记为 `pdf_parsing_not_implemented` |
 | 04 | 补目录总任务执行后统计与状态汇总 | 已完成 | 已写回父任务 `execution_summary` |
 | 05 | 补目录执行链路的本地验收脚本和 README 说明 | 已完成 | 已升级目录验收脚本和文档说明 |
+
+### 模块 04：PDF 导入与解析 MVP
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 明确 PDF 第一阶段解析策略 | 已完成 | 已限定为可复制文本 PDF，按页切 section |
+| 02 | 实现 PDF 单文件读取与文本提取 | 已完成 | 已接入 `pypdf` 和页级 section 提取 |
+| 03 | 将 PDF 接入统一导入落库链路 | 未开始 | 写入最小 `document/section/chunk` |
+| 04 | 让目录导入执行阶段真正消费 PDF 子任务 | 未开始 | 替换当前执行期跳过逻辑 |
+| 05 | 补 PDF 本地验收脚本与 README 说明 | 未开始 | 支撑后续回归验证 |
