@@ -41,6 +41,13 @@ class DirectoryExecutionSummary:
     failed_jobs: int = 0
     skipped_jobs: int = 0
 
+    def as_payload(self) -> dict[str, int]:
+        return {
+            "success_jobs": self.success_jobs,
+            "failed_jobs": self.failed_jobs,
+            "executed_skipped_jobs": self.skipped_jobs,
+        }
+
 
 class ImportService:
     """Coordinates CLI-facing import requests."""
@@ -258,6 +265,10 @@ class ImportService:
                     scan_result.empty_files,
                 )
                 execution_summary = self._execute_directory_child_jobs(request, child_jobs)
+                self._repository.update_directory_import_summary(
+                    parent_job_id,
+                    execution_summary.as_payload(),
+                )
             except psycopg.Error as exc:
                 return CommandResult(
                     exit_code=1,

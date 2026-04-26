@@ -191,6 +191,11 @@ def test_import_directory_persists_batch_and_child_jobs(tmp_path: Path) -> None:
     assert [path.name for path in repository.last_supported_files] == ["a.md", "b.pdf"]
     assert [path.name for path in repository.last_unsupported_files] == ["c.txt"]
     assert [path.name for path in repository.last_empty_files] == ["d.md"]
+    assert repository.last_directory_execution_summary == {
+        "success_jobs": 1,
+        "failed_jobs": 0,
+        "executed_skipped_jobs": 1,
+    }
 
 
 def test_import_directory_keeps_changed_files_pending_and_skips_unchanged(tmp_path: Path) -> None:
@@ -218,6 +223,11 @@ def test_import_directory_keeps_changed_files_pending_and_skips_unchanged(tmp_pa
     assert repository.unchanged_files == {tmp_path / "same.md"}
     assert repository.persisted_import_job_ids == []
     assert ("00000000-0000-0000-0000-000000000011", "skipped", "pdf_parsing_not_implemented") in repository.status_updates
+    assert repository.last_directory_execution_summary == {
+        "success_jobs": 0,
+        "failed_jobs": 0,
+        "executed_skipped_jobs": 1,
+    }
 
 
 def test_import_directory_marks_child_job_failed_when_markdown_parse_fails(
@@ -244,6 +254,11 @@ def test_import_directory_marks_child_job_failed_when_markdown_parse_fails(
     assert repository.persisted_import_job_ids == []
     assert repository.status_updates[-1][0] == "00000000-0000-0000-0000-000000000011"
     assert repository.status_updates[-1][1] == "failed"
+    assert repository.last_directory_execution_summary == {
+        "success_jobs": 0,
+        "failed_jobs": 1,
+        "executed_skipped_jobs": 0,
+    }
 
 
 def test_main_accepts_single_markdown_file(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -379,6 +394,7 @@ class RecordingImportRepository:
         self.created_job_type: str | None = None
         self.status_updates: list[tuple[str, str, str | None]] = []
         self.persisted_import_job_ids: list[str] = []
+        self.last_directory_execution_summary: dict[str, int] | None = None
 
     def create_directory_import_jobs(
         self,
@@ -471,6 +487,13 @@ class RecordingImportRepository:
         error_message: str | None = None,
     ) -> None:
         self.status_updates.append((str(import_job_id), status, error_message))
+
+    def update_directory_import_summary(
+        self,
+        import_job_id: UUID,
+        execution_summary: dict[str, int],
+    ) -> None:
+        self.last_directory_execution_summary = execution_summary
 
     def persist_markdown_import(
         self,

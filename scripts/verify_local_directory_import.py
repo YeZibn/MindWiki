@@ -104,6 +104,22 @@ def fetch_child_jobs(connection: psycopg.Connection, batch_job_id: str) -> list[
         ]
 
 
+def fetch_parent_payload(connection: psycopg.Connection, batch_job_id: str) -> dict[str, object]:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT input_payload
+            FROM import_jobs
+            WHERE id = %s
+            """,
+            (batch_job_id,),
+        )
+        row = cursor.fetchone()
+        if row is None or not row[0]:
+            return {}
+        return json.loads(row[0])
+
+
 def main() -> int:
     args = build_parser().parse_args()
     database_url = read_database_url(args.database_url)
@@ -178,6 +194,7 @@ def main() -> int:
         with psycopg.connect(database_url) as connection:
             after_counts = fetch_counts(connection)
             child_jobs = fetch_child_jobs(connection, batch_job_id) if batch_job_id else []
+            parent_payload = fetch_parent_payload(connection, batch_job_id) if batch_job_id else {}
 
     summary = {
         "file_import": {
@@ -191,6 +208,7 @@ def main() -> int:
             "stdout": dir_stdout,
             "stderr": dir_stderr,
             "parsed_output": dir_parsed_output,
+            "parent_payload": parent_payload,
             "child_jobs": child_jobs,
         },
         "before_counts": before_counts,
@@ -215,6 +233,9 @@ def main() -> int:
         "unsupported_files": "1",
         "empty_files": "1",
         "child_jobs": "4",
+        "success_jobs": "0",
+        "failed_jobs": "0",
+        "executed_skipped_jobs": "1",
         "pending_jobs": "1",
         "skipped_jobs": "3",
         "skipped_unsupported": "1",
@@ -223,10 +244,15 @@ def main() -> int:
     }
     expected_child_jobs = [
         {"name": "a.md", "status": "skipped", "error_message": "content_unchanged"},
-        {"name": "b.pdf", "status": "pending", "error_message": ""},
+        {"name": "b.pdf", "status": "skipped", "error_message": "pdf_parsing_not_implemented"},
         {"name": "c.txt", "status": "skipped", "error_message": "unsupported_file_type"},
         {"name": "d.md", "status": "skipped", "error_message": "empty_file"},
     ]
+    expected_parent_execution_summary = {
+        "success_jobs": 0,
+        "failed_jobs": 0,
+        "executed_skipped_jobs": 1,
+    }
 
     if file_completed.returncode != 0 or dir_completed.returncode != 0:
         return 1
@@ -244,6 +270,12 @@ def main() -> int:
     for table, expected in expected_counts.items():
         if summary["delta_counts"][table] != expected:
             return 1
+
+    if (
+        summary["directory_import"]["parent_payload"].get("execution_summary")
+        != expected_parent_execution_summary
+    ):
+        return 1
 
     if len(child_jobs) != len(expected_child_jobs):
         return 1

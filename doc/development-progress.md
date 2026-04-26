@@ -17,6 +17,50 @@
 
 ### 2026-04-26
 
+#### 记录 023：完成模块 03 任务 04-05，补齐目录执行后汇总与验收链路
+
+- 状态：已完成
+- 范围：完成模块 03 中以下任务：
+  - 任务 04：补目录总任务执行后统计与状态汇总
+  - 任务 05：补目录执行链路的本地验收脚本和 README 说明
+- 结果：
+  - 目录导入 CLI 输出现在已明确区分两层统计口径：
+    - 建任务阶段统计：`pending_jobs`、`skipped_jobs`、`skipped_unsupported`、`skipped_empty`、`skipped_unchanged`
+    - 执行阶段统计：`success_jobs`、`failed_jobs`、`executed_skipped_jobs`
+  - 父批次任务当前仍保持 `status = success`
+  - 父批次任务的 `input_payload` 已补充：
+    - `execution_summary.success_jobs`
+    - `execution_summary.failed_jobs`
+    - `execution_summary.executed_skipped_jobs`
+  - `scripts/verify_local_directory_import.py` 已升级到目录执行链路新口径
+  - `README.md` 与 `scripts/README.md` 已补充父任务执行汇总和目录验收脚本说明
+- 验证结果：
+  - `python3 -m pytest tests/test_cli.py` 通过，当前共 17 个测试
+  - `python3 -m py_compile scripts/verify_local_directory_import.py` 通过
+  - 真实执行 `PYTHONPATH=src /opt/miniconda3/bin/python3 scripts/verify_local_directory_import.py` 成功，退出码为 `0`
+  - 本次真实目录导入返回：
+    - `batch_job_id = 627e9165-05d9-47fd-97de-f9c5acc03752`
+    - `success_jobs = 0`
+    - `failed_jobs = 0`
+    - `executed_skipped_jobs = 1`
+    - `pending_jobs = 1`
+    - `skipped_jobs = 3`
+  - 针对该批次父任务的数据库回查结果为：
+    - `input_payload.execution_summary.success_jobs = 0`
+    - `input_payload.execution_summary.failed_jobs = 0`
+    - `input_payload.execution_summary.executed_skipped_jobs = 1`
+  - 针对该批次子任务的数据库回查结果为：
+    - `a.md -> skipped / content_unchanged`
+    - `b.pdf -> skipped / pdf_parsing_not_implemented`
+    - `c.txt -> skipped / unsupported_file_type`
+    - `d.md -> skipped / empty_file`
+- 遗留问题：
+  - 当前父任务状态模型仍保持最小实现，尚未引入 `partial_success`
+  - 目录执行链路目前仍未覆盖 PDF 真实解析与真实成功写入
+- 下一步：
+  - 模块 03 的 5 个任务已全部完成
+  - 下一阶段可开始讨论模块 04 的目标与任务拆分
+
 #### 记录 022：完成模块 03 任务 01-03，打通目录导入执行入口
 
 - 状态：已完成
@@ -683,5 +727,5 @@
 | 01 | 批量消费目录导入中的 `pending` 子任务 | 已完成 | 已支持同命令内消费待执行子任务 |
 | 02 | 复用单文件 Markdown 导入链路，完成批量真实落库 | 已完成 | 已复用既有 Markdown 导入链路和子任务 ID |
 | 03 | 为暂未实现解析的 PDF 明确执行策略 | 已完成 | 当前执行阶段标记为 `pdf_parsing_not_implemented` |
-| 04 | 补目录总任务执行后统计与状态汇总 | 未开始 | 输出执行后成功/失败/跳过统计 |
-| 05 | 补目录执行链路的本地验收脚本和 README 说明 | 未开始 | 支撑后续回归验证 |
+| 04 | 补目录总任务执行后统计与状态汇总 | 已完成 | 已写回父任务 `execution_summary` |
+| 05 | 补目录执行链路的本地验收脚本和 README 说明 | 已完成 | 已升级目录验收脚本和文档说明 |

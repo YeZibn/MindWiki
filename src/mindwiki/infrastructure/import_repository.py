@@ -68,6 +68,12 @@ class ImportRepository(Protocol):
         error_message: str | None = None,
     ) -> None: ...
 
+    def update_directory_import_summary(
+        self,
+        import_job_id: UUID,
+        execution_summary: dict[str, int],
+    ) -> None: ...
+
     def persist_markdown_import(
         self,
         import_job_id: UUID,
@@ -355,6 +361,41 @@ class PostgresImportRepository:
                         finished_at,
                         import_job_id,
                     ),
+                )
+            connection.commit()
+
+    def update_directory_import_summary(
+        self,
+        import_job_id: UUID,
+        execution_summary: dict[str, int],
+    ) -> None:
+        with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT input_payload
+                    FROM import_jobs
+                    WHERE id = %s
+                    """,
+                    (import_job_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return
+
+                raw_payload = row["input_payload"] or "{}"
+                payload = json.loads(raw_payload)
+                payload["execution_summary"] = execution_summary
+
+                cursor.execute(
+                    """
+                    UPDATE import_jobs
+                    SET
+                        input_payload = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    """,
+                    (json.dumps(payload, ensure_ascii=True), import_job_id),
                 )
             connection.commit()
 

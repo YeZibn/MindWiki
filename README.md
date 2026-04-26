@@ -58,6 +58,7 @@ Current CLI behavior:
 - `import dir` currently prints a lightweight summary including `pending_jobs`, `skipped_jobs`, `skipped_unsupported`, `skipped_empty`, and `skipped_unchanged`
 - `import dir` now also consumes newly created `pending` child jobs in the same command: Markdown child jobs are executed immediately, while PDF child jobs are currently marked as `skipped` with `error_message=pdf_parsing_not_implemented`
 - current execution output also includes `success_jobs`, `failed_jobs`, and `executed_skipped_jobs`
+- the parent directory job currently keeps `status=success` and writes the execution aggregate back to `input_payload.execution_summary`
 - `--tag` can be repeated
 - `--source-note` is optional
 - `--recursive` is only used for `import dir`
@@ -114,7 +115,9 @@ The directory verification script will:
 - import one Markdown file first to create an unchanged-content baseline
 - run `mindwiki import dir ...`
 - verify `pending_jobs`, `skipped_jobs`, `skipped_unsupported`, `skipped_empty`, and `skipped_unchanged`
+- verify `success_jobs`, `failed_jobs`, and `executed_skipped_jobs`
 - query child jobs for the generated `batch_job_id`
+- verify the parent directory job payload contains `execution_summary`
 
 Current status conventions:
 
