@@ -68,9 +68,12 @@ def test_import_file_returns_error_for_unsupported_type(tmp_path: Path) -> None:
     assert "Unsupported file type" in result.message
 
 
-def test_main_accepts_single_markdown_file(tmp_path: Path, capsys) -> None:
+def test_main_accepts_single_markdown_file(tmp_path: Path, capsys, monkeypatch) -> None:
     file_path = tmp_path / "notes.md"
     file_path.write_text("# Notes", encoding="utf-8")
+    monkeypatch.delenv("MINDWIKI_DATABASE_URL", raising=False)
+    monkeypatch.setattr(settings_module, "DOTENV_PATH", tmp_path / ".env")
+    settings_module.clear_settings_cache()
 
     exit_code = main(
         [
@@ -90,7 +93,7 @@ def test_main_accepts_single_markdown_file(tmp_path: Path, capsys) -> None:
     assert "Single-file import request accepted." in captured.out
     assert "title=Notes" in captured.out
     assert "sections=1" in captured.out
-    assert "persistence=skipped" in captured.out
+    assert "persistence=" in captured.out
     assert "tags=work" in captured.out
     assert "source_note=study" in captured.out
 
@@ -154,27 +157,73 @@ def test_import_file_persists_markdown_when_repository_is_available(tmp_path: Pa
 
     assert result.exit_code == 0
     assert "persistence=stored" in result.message
+    assert "import_job_id=00000000-0000-0000-0000-000000000001" in result.message
     assert "document_id=00000000-0000-0000-0000-000000000003" in result.message
     assert repository.last_request is not None
     assert repository.last_request.path == file_path
     assert repository.last_parsed is not None
     assert repository.last_parsed.title_candidates[0].value == "Notes"
+    assert repository.created_job_type == ".md"
+    assert repository.status_updates == [
+        ("00000000-0000-0000-0000-000000000001", "running", None),
+        ("00000000-0000-0000-0000-000000000001", "success", None),
+    ]
+
+
+def test_import_file_marks_job_failed_on_parse_error(tmp_path: Path, monkeypatch) -> None:
+    file_path = tmp_path / "notes.md"
+    file_path.write_text("# Notes\n", encoding="utf-8")
+    repository = RecordingImportRepository()
+    service = ImportService(repository=repository)
+
+    def boom(_: Path):
+        raise UnicodeDecodeError("utf-8", b"", 0, 1, "bad input")
+
+    monkeypatch.setattr("mindwiki.application.import_service.parse_markdown", boom)
+
+    result = service.import_file(ImportFileRequest(path=file_path))
+
+    assert result.exit_code == 1
+    assert "reason=parse_error:UnicodeDecodeError" in result.message
+    assert repository.status_updates[-1][1] == "failed"
+    assert "UnicodeDecodeError" in (repository.status_updates[-1][2] or "")
 
 
 class RecordingImportRepository:
     def __init__(self) -> None:
         self.last_request: ImportFileRequest | None = None
         self.last_parsed = None
+        self.created_job_type: str | None = None
+        self.status_updates: list[tuple[str, str, str | None]] = []
+
+    def create_import_job(
+        self,
+        request: ImportFileRequest,
+        detected_file_type: str | None,
+    ) -> UUID:
+        self.last_request = request
+        self.created_job_type = detected_file_type
+        return UUID("00000000-0000-0000-0000-000000000001")
+
+    def update_import_job_status(
+        self,
+        import_job_id: UUID,
+        status: str,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        self.status_updates.append((str(import_job_id), status, error_message))
 
     def persist_markdown_import(
         self,
+        import_job_id: UUID,
         request: ImportFileRequest,
         parsed,
     ) -> PersistedImportResult:
         self.last_request = request
         self.last_parsed = parsed
         return PersistedImportResult(
-            import_job_id=UUID("00000000-0000-0000-0000-000000000001"),
+            import_job_id=import_job_id,
             source_id=UUID("00000000-0000-0000-0000-000000000002"),
             document_id=UUID("00000000-0000-0000-0000-000000000003"),
             section_count=len(parsed.sections),

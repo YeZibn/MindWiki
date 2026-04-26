@@ -33,6 +33,7 @@ class ImportService:
 
     def import_file(self, request: ImportFileRequest) -> CommandResult:
         path = request.path.expanduser().resolve()
+        import_job_id = None
 
         if not path.exists():
             return CommandResult(exit_code=1, message=f"File not found: {path}")
@@ -52,7 +53,34 @@ class ImportService:
             )
 
         if suffix == ".md":
-            parsed = parse_markdown(path)
+            if self._repository is not None:
+                try:
+                    import_job_id = self._repository.create_import_job(request, suffix)
+                    self._repository.update_import_job_status(import_job_id, "running")
+                except psycopg.Error as exc:
+                    return CommandResult(
+                        exit_code=1,
+                        message=(
+                            "Single-file import failed. "
+                            f"path={path} type={suffix} "
+                            f"reason=database_error:{exc.__class__.__name__}"
+                        ),
+                    )
+
+            try:
+                parsed = parse_markdown(path)
+            except Exception as exc:
+                if self._repository is not None and import_job_id is not None:
+                    self._safe_mark_failed(import_job_id, exc)
+                return CommandResult(
+                    exit_code=1,
+                    message=(
+                        "Single-file import failed. "
+                        f"path={path} type={suffix} "
+                        f"reason=parse_error:{exc.__class__.__name__}"
+                    ),
+                )
+
             title = parsed.title_candidates[0].value if parsed.title_candidates else path.stem
             details = [
                 "Single-file import request accepted.",
@@ -64,10 +92,20 @@ class ImportService:
 
             if self._repository is not None:
                 try:
-                    persisted = self._repository.persist_markdown_import(request, parsed)
+                    persisted = self._repository.persist_markdown_import(import_job_id, request, parsed)
+                    self._repository.update_import_job_status(import_job_id, "success")
                 except psycopg.Error as exc:
-                    details.append("persistence=skipped")
-                    details.append(f"reason=database_error:{exc.__class__.__name__}")
+                    if import_job_id is not None:
+                        self._safe_mark_failed(import_job_id, exc)
+                    return CommandResult(
+                        exit_code=1,
+                        message=(
+                            "Single-file import failed. "
+                            f"path={path} type={suffix} "
+                            f"reason=database_error:{exc.__class__.__name__} "
+                            f"import_job_id={import_job_id}"
+                        ),
+                    )
                 else:
                     details.extend(
                         [
@@ -108,6 +146,18 @@ class ImportService:
             exit_code=0,
             message=" ".join(details),
         )
+
+    def _safe_mark_failed(self, import_job_id: object, exc: Exception) -> None:
+        if self._repository is None:
+            return
+        try:
+            self._repository.update_import_job_status(
+                import_job_id,
+                "failed",
+                error_message=f"{exc.__class__.__name__}: {exc}",
+            )
+        except psycopg.Error:
+            pass
 
     def import_directory(self, request: ImportDirectoryRequest) -> CommandResult:
         path = request.path.expanduser().resolve()

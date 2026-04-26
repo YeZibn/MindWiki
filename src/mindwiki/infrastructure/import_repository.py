@@ -28,8 +28,23 @@ class PersistedImportResult:
 
 
 class ImportRepository(Protocol):
+    def create_import_job(
+        self,
+        request: ImportFileRequest,
+        detected_file_type: str | None,
+    ) -> UUID: ...
+
+    def update_import_job_status(
+        self,
+        import_job_id: UUID,
+        status: str,
+        *,
+        error_message: str | None = None,
+    ) -> None: ...
+
     def persist_markdown_import(
         self,
+        import_job_id: UUID,
         request: ImportFileRequest,
         parsed: ParsedMarkdownDocument,
     ) -> PersistedImportResult: ...
@@ -43,6 +58,7 @@ class PostgresImportRepository:
 
     def persist_markdown_import(
         self,
+        import_job_id: UUID,
         request: ImportFileRequest,
         parsed: ParsedMarkdownDocument,
     ) -> PersistedImportResult:
@@ -62,7 +78,6 @@ class PostgresImportRepository:
         with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
             with connection.cursor() as cursor:
                 source_id = self._insert_source(cursor, path, request.source_note)
-                import_job_id = self._insert_import_job(cursor, path, input_payload, now)
                 document_id = self._insert_document(
                     cursor,
                     source_id=source_id,
@@ -86,6 +101,69 @@ class PostgresImportRepository:
             section_count=section_count,
             chunk_count=chunk_count,
         )
+
+    def create_import_job(
+        self,
+        request: ImportFileRequest,
+        detected_file_type: str | None,
+    ) -> UUID:
+        path = request.path.expanduser().resolve()
+        input_payload = json.dumps(
+            {
+                "path": str(path),
+                "import_type": "file",
+                "tags": list(request.tags),
+                "source_note": request.source_note,
+                "detected_file_type": detected_file_type,
+            },
+            ensure_ascii=True,
+        )
+
+        with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
+            with connection.cursor() as cursor:
+                import_job_id = self._insert_import_job(
+                    cursor,
+                    path=path,
+                    input_payload=input_payload,
+                    status="pending",
+                    now=None,
+                )
+            connection.commit()
+
+        return import_job_id
+
+    def update_import_job_status(
+        self,
+        import_job_id: UUID,
+        status: str,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        finished_at = datetime.now() if status in {"success", "failed", "skipped", "cancelled"} else None
+        started_at = datetime.now() if status == "running" else None
+
+        with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE import_jobs
+                    SET
+                        status = %s,
+                        error_message = %s,
+                        started_at = COALESCE(started_at, %s),
+                        finished_at = COALESCE(%s, finished_at),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    """,
+                    (
+                        status,
+                        error_message,
+                        started_at,
+                        finished_at,
+                        import_job_id,
+                    ),
+                )
+            connection.commit()
 
     @staticmethod
     def _insert_source(cursor: psycopg.Cursor[dict], path: Path, source_note: str | None) -> UUID:
@@ -112,7 +190,8 @@ class PostgresImportRepository:
         cursor: psycopg.Cursor[dict],
         path: Path,
         input_payload: str,
-        now: datetime,
+        status: str,
+        now: datetime | None,
     ) -> UUID:
         cursor.execute(
             """
@@ -128,7 +207,7 @@ class PostgresImportRepository:
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            ("file", "success", str(path), input_payload, 0, now, now),
+            ("file", status, str(path), input_payload, 0, now, now if status == "success" else None),
         )
         row = cursor.fetchone()
         return row["id"]
