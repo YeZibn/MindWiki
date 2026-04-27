@@ -80,47 +80,7 @@ class ImportService:
             return self._import_markdown_file(request)
 
         if suffix == ".pdf":
-            try:
-                parsed = parse_pdf(path)
-            except PdfReadError:
-                return CommandResult(
-                    exit_code=1,
-                    message=(
-                        "Single-file import failed. "
-                        f"path={path} type={suffix} "
-                        "reason=pdf_read_failed"
-                    ),
-                )
-            except PdfTextExtractionError:
-                return CommandResult(
-                    exit_code=1,
-                    message=(
-                        "Single-file import failed. "
-                        f"path={path} type={suffix} "
-                        "reason=pdf_text_extraction_failed"
-                    ),
-                )
-
-            title = parsed.title_candidates[0].value if parsed.title_candidates else path.stem
-            details = [
-                "Single-file import request accepted.",
-                f"path={path}",
-                f"type={suffix}",
-                f"title={title}",
-                f"pages={parsed.page_count}",
-                f"sections={len(parsed.sections)}",
-                "parsing=completed",
-                "persistence=skipped",
-                "reason=pdf_persistence_not_implemented",
-            ]
-
-            if request.tags:
-                details.append(f"tags={','.join(request.tags)}")
-
-            if request.source_note:
-                details.append(f"source_note={request.source_note}")
-
-            return CommandResult(exit_code=0, message=" ".join(details))
+            return self._import_pdf_file(request)
 
         details = [
             "Single-file import request accepted.",
@@ -228,6 +188,108 @@ class ImportService:
                     ]
                 )
         else:
+            details.append("persistence=skipped")
+            details.append("reason=database_url_missing")
+
+        if request.tags:
+            details.append(f"tags={','.join(request.tags)}")
+
+        if request.source_note:
+            details.append(f"source_note={request.source_note}")
+
+        return CommandResult(exit_code=0, message=" ".join(details))
+
+    def _import_pdf_file(
+        self,
+        request: ImportFileRequest,
+        *,
+        import_job_id: object | None = None,
+    ) -> CommandResult:
+        path = request.path.expanduser().resolve()
+        suffix = path.suffix.lower()
+        active_import_job_id = import_job_id
+
+        if self._repository is not None:
+            try:
+                if active_import_job_id is None:
+                    active_import_job_id = self._repository.create_import_job(request, suffix)
+                self._repository.update_import_job_status(active_import_job_id, "running")
+            except psycopg.Error as exc:
+                return CommandResult(
+                    exit_code=1,
+                    message=(
+                        "Single-file import failed. "
+                        f"path={path} type={suffix} "
+                        f"reason=database_error:{exc.__class__.__name__}"
+                    ),
+                )
+
+        try:
+            parsed = parse_pdf(path)
+        except PdfReadError:
+            if self._repository is not None and active_import_job_id is not None:
+                self._safe_mark_failed(active_import_job_id, PdfReadError("pdf_read_failed"))
+            return CommandResult(
+                exit_code=1,
+                message=(
+                    "Single-file import failed. "
+                    f"path={path} type={suffix} "
+                    "reason=pdf_read_failed"
+                ),
+            )
+        except PdfTextExtractionError:
+            if self._repository is not None and active_import_job_id is not None:
+                self._safe_mark_failed(
+                    active_import_job_id,
+                    PdfTextExtractionError("pdf_text_extraction_failed"),
+                )
+            return CommandResult(
+                exit_code=1,
+                message=(
+                    "Single-file import failed. "
+                    f"path={path} type={suffix} "
+                    "reason=pdf_text_extraction_failed"
+                ),
+            )
+
+        title = parsed.title_candidates[0].value if parsed.title_candidates else path.stem
+        details = [
+            "Single-file import request accepted.",
+            f"path={path}",
+            f"type={suffix}",
+            f"title={title}",
+            f"pages={parsed.page_count}",
+            f"sections={len(parsed.sections)}",
+        ]
+
+        if self._repository is not None:
+            try:
+                persisted = self._repository.persist_pdf_import(active_import_job_id, request, parsed)
+                self._repository.update_import_job_status(active_import_job_id, "success")
+            except psycopg.Error as exc:
+                if active_import_job_id is not None:
+                    self._safe_mark_failed(active_import_job_id, exc)
+                return CommandResult(
+                    exit_code=1,
+                    message=(
+                        "Single-file import failed. "
+                        f"path={path} type={suffix} "
+                        f"reason=database_error:{exc.__class__.__name__} "
+                        f"import_job_id={active_import_job_id}"
+                    ),
+                )
+            else:
+                details.extend(
+                    [
+                        "persistence=stored",
+                        f"import_job_id={persisted.import_job_id}",
+                        f"source_id={persisted.source_id}",
+                        f"document_id={persisted.document_id}",
+                        f"chunks={persisted.chunk_count}",
+                    ]
+                )
+        else:
+            details.append("parsing=completed")
             details.append("persistence=skipped")
             details.append("reason=database_url_missing")
 

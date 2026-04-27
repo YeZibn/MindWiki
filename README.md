@@ -55,6 +55,7 @@ Current CLI behavior:
 - successful Markdown imports currently print a lightweight parsing summary such as `title=...` and `sections=...`
 - successful PDF imports currently print a lightweight parsing summary such as `title=...`, `pages=...`, and `sections=...`
 - if `MINDWIKI_DATABASE_URL` is configured and the local schema has been initialized, Markdown imports will also write `sources`, `import_jobs`, `documents`, `sections`, and `chunks` to PostgreSQL
+- if `MINDWIKI_DATABASE_URL` is configured and the local schema has been initialized, copyable-text PDF imports will also write `sources`, `import_jobs`, `documents`, `sections`, and `chunks` to PostgreSQL
 - `import dir` checks whether the path exists and whether it is a directory
 - `import dir` currently creates a batch job plus file child jobs; supported files with the same `file_path` and same `content_hash` as an existing document are marked as `skipped` with `error_message=content_unchanged`
 - `import dir` currently prints a lightweight summary including `pending_jobs`, `skipped_jobs`, `skipped_unsupported`, `skipped_empty`, and `skipped_unchanged`
@@ -68,9 +69,9 @@ Current CLI behavior:
 Current limitation:
 
 - `.pdf` single-file parsing currently only supports copyable-text PDFs
-- `.pdf` files are not yet persisted into PostgreSQL
+- `.pdf` directory execution is not yet connected to real PDF persistence
 - if `MINDWIKI_DATABASE_URL` is missing, persistence is skipped and the CLI will report `reason=database_url_missing`
-- PDF OCR and PDF persistence will be added in later development tasks
+- PDF OCR and PDF directory execution will be added in later development tasks
 
 PostgreSQL persistence setup:
 

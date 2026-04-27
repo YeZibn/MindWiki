@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from uuid import UUID
-from tempfile import TemporaryDirectory
 
 from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.application.import_service import (
@@ -13,6 +12,7 @@ from mindwiki.cli.main import build_parser
 from mindwiki.cli.main import main
 from mindwiki.ingestion.markdown import parse_markdown
 from mindwiki.ingestion.pdf import (
+    ParsedPdfDocument,
     PdfTextExtractionError,
     parse_pdf,
 )
@@ -204,9 +204,40 @@ def test_import_file_parses_pdf_and_returns_summary(tmp_path: Path, monkeypatch)
     assert "sections=1" in result.message
     assert "parsing=completed" in result.message
     assert "persistence=skipped" in result.message
-    assert "reason=pdf_persistence_not_implemented" in result.message
+    assert "reason=database_url_missing" in result.message
     assert "tags=work" in result.message
     assert "source_note=paper" in result.message
+
+
+def test_import_file_persists_pdf_when_repository_is_available(tmp_path: Path) -> None:
+    file_path = tmp_path / "paper.pdf"
+    write_text_pdf(file_path, ["PDF body"])
+    repository = RecordingImportRepository()
+    service = ImportService(repository=repository)
+
+    result = service.import_file(
+        ImportFileRequest(
+            path=file_path,
+            tags=("work",),
+            source_note="paper",
+        )
+    )
+
+    assert result.exit_code == 0
+    assert "persistence=stored" in result.message
+    assert "import_job_id=00000000-0000-0000-0000-000000000001" in result.message
+    assert "document_id=00000000-0000-0000-0000-000000000003" in result.message
+    assert "pages=1" in result.message
+    assert repository.last_request is not None
+    assert repository.last_request.path == file_path
+    assert repository.last_pdf_parsed is not None
+    assert repository.last_pdf_parsed.page_count == 1
+    assert repository.created_job_type == ".pdf"
+    assert repository.persisted_pdf_import_job_ids == ["00000000-0000-0000-0000-000000000001"]
+    assert repository.status_updates == [
+        ("00000000-0000-0000-0000-000000000001", "running", None),
+        ("00000000-0000-0000-0000-000000000001", "success", None),
+    ]
 
 
 def test_import_file_returns_error_when_pdf_has_no_usable_text(tmp_path: Path, monkeypatch) -> None:
@@ -224,6 +255,26 @@ def test_import_file_returns_error_when_pdf_has_no_usable_text(tmp_path: Path, m
 
     assert result.exit_code == 1
     assert "reason=pdf_text_extraction_failed" in result.message
+
+
+def test_import_file_marks_pdf_job_failed_on_text_extraction_error(tmp_path: Path) -> None:
+    file_path = tmp_path / "scan.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=300, height=300)
+    with file_path.open("wb") as handle:
+        writer.write(handle)
+    repository = RecordingImportRepository()
+    service = ImportService(repository=repository)
+
+    result = service.import_file(ImportFileRequest(path=file_path))
+
+    assert result.exit_code == 1
+    assert "reason=pdf_text_extraction_failed" in result.message
+    assert repository.status_updates[-1] == (
+        "00000000-0000-0000-0000-000000000001",
+        "failed",
+        "PdfTextExtractionError: pdf_text_extraction_failed",
+    )
 
 
 def test_import_directory_respects_recursive_flag(tmp_path: Path, monkeypatch) -> None:
@@ -477,9 +528,11 @@ class RecordingImportRepository:
         self.last_empty_files: tuple[Path, ...] = ()
         self.unchanged_files: set[Path] = set()
         self.last_parsed = None
+        self.last_pdf_parsed = None
         self.created_job_type: str | None = None
         self.status_updates: list[tuple[str, str, str | None]] = []
         self.persisted_import_job_ids: list[str] = []
+        self.persisted_pdf_import_job_ids: list[str] = []
         self.last_directory_execution_summary: dict[str, int] | None = None
 
     def create_directory_import_jobs(
@@ -590,6 +643,23 @@ class RecordingImportRepository:
         self.last_request = request
         self.last_parsed = parsed
         self.persisted_import_job_ids.append(str(import_job_id))
+        return PersistedImportResult(
+            import_job_id=import_job_id,
+            source_id=UUID("00000000-0000-0000-0000-000000000002"),
+            document_id=UUID("00000000-0000-0000-0000-000000000003"),
+            section_count=len(parsed.sections),
+            chunk_count=len([section for section in parsed.sections if section.content]),
+        )
+
+    def persist_pdf_import(
+        self,
+        import_job_id: UUID,
+        request: ImportFileRequest,
+        parsed: ParsedPdfDocument,
+    ) -> PersistedImportResult:
+        self.last_request = request
+        self.last_pdf_parsed = parsed
+        self.persisted_pdf_import_job_ids.append(str(import_job_id))
         return PersistedImportResult(
             import_job_id=import_job_id,
             source_id=UUID("00000000-0000-0000-0000-000000000002"),

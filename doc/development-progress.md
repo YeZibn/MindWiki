@@ -17,6 +17,41 @@
 
 ### 2026-04-26
 
+#### 记录 027：完成模块 04 任务 03，将 PDF 接入统一导入落库链路
+
+- 状态：已完成
+- 范围：完成模块 04 中“任务 03：将 PDF 接入统一导入落库链路”
+- 结果：
+  - `mindwiki import file <pdf>` 在有数据库配置时，已接入真实 `import_job` 状态流转：
+    - `pending -> running -> success/failed`
+  - PDF 已复用现有 `sources / import_jobs / documents / sections / chunks` 表结构落库
+  - 当前落库约定为：
+    - `sources.source_type = pdf`
+    - `documents.document_type = pdf`
+    - 每页一个 `section`
+    - 每页正文一个 `chunk`
+    - `chunks.page_number` 写入对应页码
+  - 当前无码库环境下，PDF 单文件导入会与 Markdown 保持一致，返回：
+    - `persistence=skipped`
+    - `reason=database_url_missing`
+  - 当前 PDF 单文件导入失败时，会按真实执行失败回写 `failed`
+- 验证结果：
+  - `python3 -m pytest tests/test_cli.py` 通过，当前共 23 个测试
+  - `python3 -m py_compile src/mindwiki/infrastructure/import_repository.py src/mindwiki/application/import_service.py tests/test_cli.py` 通过
+  - 真实执行 PDF 单文件导入成功，返回：
+    - `import_job_id = c3dffe34-cc2b-4743-bd9c-b857ae09c07c`
+    - `document_id = bff44d2b-0373-418d-a31b-256dfb4b1f10`
+    - `chunks = 1`
+  - 针对该次 PDF 导入的数据库回查结果为：
+    - `documents.document_type = pdf`
+    - `chunks.page_number = 1`
+    - `chunk_rows = 1`
+- 遗留问题：
+  - 当前目录导入执行阶段仍未真正消费 PDF 子任务
+  - 当前仅覆盖可复制文本 PDF，未纳入 OCR
+- 下一步：
+  - 进入模块 04 任务 04：让目录导入执行阶段真正消费 PDF 子任务
+
 #### 记录 026：完成模块 04 任务 02，实现 PDF 单文件读取与文本提取
 
 - 状态：已完成
@@ -851,6 +886,6 @@
 | --- | --- | --- | --- |
 | 01 | 明确 PDF 第一阶段解析策略 | 已完成 | 已限定为可复制文本 PDF，按页切 section |
 | 02 | 实现 PDF 单文件读取与文本提取 | 已完成 | 已接入 `pypdf` 和页级 section 提取 |
-| 03 | 将 PDF 接入统一导入落库链路 | 未开始 | 写入最小 `document/section/chunk` |
+| 03 | 将 PDF 接入统一导入落库链路 | 已完成 | 已写入 `document_type=pdf` 与 `chunk.page_number` |
 | 04 | 让目录导入执行阶段真正消费 PDF 子任务 | 未开始 | 替换当前执行期跳过逻辑 |
 | 05 | 补 PDF 本地验收脚本与 README 说明 | 未开始 | 支撑后续回归验证 |

@@ -15,6 +15,7 @@ from psycopg.rows import dict_row
 
 from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
 from mindwiki.ingestion.markdown import ParsedMarkdownDocument
+from mindwiki.ingestion.pdf import ParsedPdfDocument
 from mindwiki.infrastructure.database import get_database_url
 
 
@@ -81,6 +82,13 @@ class ImportRepository(Protocol):
         parsed: ParsedMarkdownDocument,
     ) -> PersistedImportResult: ...
 
+    def persist_pdf_import(
+        self,
+        import_job_id: UUID,
+        request: ImportFileRequest,
+        parsed: ParsedPdfDocument,
+    ) -> PersistedImportResult: ...
+
 
 class PostgresImportRepository:
     """Persist import artifacts into the local PostgreSQL schema."""
@@ -109,7 +117,12 @@ class PostgresImportRepository:
 
         with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
             with connection.cursor() as cursor:
-                source_id = self._insert_source(cursor, path, request.source_note)
+                source_id = self._insert_source(
+                    cursor,
+                    path,
+                    request.source_note,
+                    source_type="markdown",
+                )
                 document_id = self._insert_document(
                     cursor,
                     source_id=source_id,
@@ -118,8 +131,53 @@ class PostgresImportRepository:
                     title=title,
                     content_hash=content_hash,
                     imported_at=now,
+                    document_type="markdown",
                 )
                 section_count, chunk_count = self._insert_sections_and_chunks(
+                    cursor,
+                    document_id=document_id,
+                    parsed=parsed,
+                )
+            connection.commit()
+
+        return PersistedImportResult(
+            import_job_id=import_job_id,
+            source_id=source_id,
+            document_id=document_id,
+            section_count=section_count,
+            chunk_count=chunk_count,
+        )
+
+    def persist_pdf_import(
+        self,
+        import_job_id: UUID,
+        request: ImportFileRequest,
+        parsed: ParsedPdfDocument,
+    ) -> PersistedImportResult:
+        path = request.path.expanduser().resolve()
+        content_hash = hashlib.sha256(parsed.raw_text.encode("utf-8")).hexdigest()
+        title = parsed.title_candidates[0].value if parsed.title_candidates else path.stem
+        now = datetime.now()
+
+        with psycopg.connect(self._database_url, row_factory=dict_row) as connection:
+            with connection.cursor() as cursor:
+                source_id = self._insert_source(
+                    cursor,
+                    path,
+                    request.source_note,
+                    source_type="pdf",
+                )
+                document_id = self._insert_document(
+                    cursor,
+                    source_id=source_id,
+                    import_job_id=import_job_id,
+                    path=path,
+                    title=title,
+                    content_hash=content_hash,
+                    imported_at=now,
+                    document_type="pdf",
+                )
+                section_count, chunk_count = self._insert_pdf_sections_and_chunks(
                     cursor,
                     document_id=document_id,
                     parsed=parsed,
@@ -400,7 +458,13 @@ class PostgresImportRepository:
             connection.commit()
 
     @staticmethod
-    def _insert_source(cursor: psycopg.Cursor[dict], path: Path, source_note: str | None) -> UUID:
+    def _insert_source(
+        cursor: psycopg.Cursor[dict],
+        path: Path,
+        source_note: str | None,
+        *,
+        source_type: str,
+    ) -> UUID:
         cursor.execute(
             """
             INSERT INTO sources (
@@ -414,7 +478,7 @@ class PostgresImportRepository:
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            ("markdown", path.as_uri(), str(path), "cli_file", source_note, True),
+            (source_type, path.as_uri(), str(path), "cli_file", source_note, True),
         )
         row = cursor.fetchone()
         return row["id"]
@@ -491,6 +555,7 @@ class PostgresImportRepository:
         title: str,
         content_hash: str,
         imported_at: datetime,
+        document_type: str,
     ) -> UUID:
         cursor.execute(
             """
@@ -513,7 +578,7 @@ class PostgresImportRepository:
                 source_id,
                 import_job_id,
                 title,
-                "markdown",
+                document_type,
                 content_hash,
                 path.name,
                 str(path),
@@ -601,6 +666,81 @@ class PostgresImportRepository:
                     None,
                     None,
                     None,
+                    None,
+                ),
+            )
+            cursor.fetchone()
+            chunk_count += 1
+
+        return section_count, chunk_count
+
+    @staticmethod
+    def _insert_pdf_sections_and_chunks(
+        cursor: psycopg.Cursor[dict],
+        *,
+        document_id: UUID,
+        parsed: ParsedPdfDocument,
+    ) -> tuple[int, int]:
+        section_count = 0
+        chunk_count = 0
+
+        for index, section in enumerate(parsed.sections):
+            cursor.execute(
+                """
+                INSERT INTO sections (
+                    document_id,
+                    parent_section_id,
+                    title,
+                    level,
+                    order_index,
+                    start_offset,
+                    end_offset
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    document_id,
+                    None,
+                    section.title,
+                    section.level,
+                    index,
+                    None,
+                    None,
+                ),
+            )
+            section_row = cursor.fetchone()
+            section_id = section_row["id"]
+            section_count += 1
+
+            if not section.content:
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO chunks (
+                    document_id,
+                    section_id,
+                    chunk_index,
+                    content_text,
+                    token_count,
+                    start_offset,
+                    end_offset,
+                    page_number,
+                    embedding_ref
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    document_id,
+                    section_id,
+                    chunk_count,
+                    section.content,
+                    None,
+                    None,
+                    None,
+                    section.page_number,
                     None,
                 ),
             )
