@@ -301,7 +301,7 @@ def test_import_directory_respects_recursive_flag(tmp_path: Path, monkeypatch) -
 
 def test_import_directory_persists_batch_and_child_jobs(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_text("# A", encoding="utf-8")
-    (tmp_path / "b.pdf").write_text("pdf", encoding="utf-8")
+    write_text_pdf(tmp_path / "b.pdf", ["PDF body"])
     (tmp_path / "c.txt").write_text("txt", encoding="utf-8")
     (tmp_path / "d.md").write_text("", encoding="utf-8")
     repository = RecordingImportRepository()
@@ -320,24 +320,24 @@ def test_import_directory_persists_batch_and_child_jobs(tmp_path: Path) -> None:
     assert "skipped_unsupported=1" in result.message
     assert "skipped_empty=1" in result.message
     assert "skipped_unchanged=0" in result.message
-    assert "success_jobs=1" in result.message
+    assert "success_jobs=2" in result.message
     assert "failed_jobs=0" in result.message
-    assert "executed_skipped_jobs=1" in result.message
+    assert "executed_skipped_jobs=0" in result.message
     assert repository.last_directory_request is not None
     assert repository.last_directory_request.path == tmp_path
     assert [path.name for path in repository.last_supported_files] == ["a.md", "b.pdf"]
     assert [path.name for path in repository.last_unsupported_files] == ["c.txt"]
     assert [path.name for path in repository.last_empty_files] == ["d.md"]
     assert repository.last_directory_execution_summary == {
-        "success_jobs": 1,
+        "success_jobs": 2,
         "failed_jobs": 0,
-        "executed_skipped_jobs": 1,
+        "executed_skipped_jobs": 0,
     }
 
 
 def test_import_directory_keeps_changed_files_pending_and_skips_unchanged(tmp_path: Path) -> None:
     (tmp_path / "same.md").write_text("# Same", encoding="utf-8")
-    (tmp_path / "new.pdf").write_text("pdf", encoding="utf-8")
+    write_text_pdf(tmp_path / "new.pdf", ["PDF body"])
     repository = RecordingImportRepository()
     repository.unchanged_files = {tmp_path / "same.md"}
     service = ImportService(repository=repository)
@@ -353,17 +353,17 @@ def test_import_directory_keeps_changed_files_pending_and_skips_unchanged(tmp_pa
     assert "skipped_unsupported=0" in result.message
     assert "skipped_empty=0" in result.message
     assert "skipped_unchanged=1" in result.message
-    assert "success_jobs=0" in result.message
+    assert "success_jobs=1" in result.message
     assert "failed_jobs=0" in result.message
-    assert "executed_skipped_jobs=1" in result.message
+    assert "executed_skipped_jobs=0" in result.message
     assert repository.last_supported_files == (tmp_path / "new.pdf", tmp_path / "same.md")
     assert repository.unchanged_files == {tmp_path / "same.md"}
     assert repository.persisted_import_job_ids == []
-    assert ("00000000-0000-0000-0000-000000000011", "skipped", "pdf_parsing_not_implemented") in repository.status_updates
+    assert repository.persisted_pdf_import_job_ids == ["00000000-0000-0000-0000-000000000011"]
     assert repository.last_directory_execution_summary == {
-        "success_jobs": 0,
+        "success_jobs": 1,
         "failed_jobs": 0,
-        "executed_skipped_jobs": 1,
+        "executed_skipped_jobs": 0,
     }
 
 
@@ -391,6 +391,34 @@ def test_import_directory_marks_child_job_failed_when_markdown_parse_fails(
     assert repository.persisted_import_job_ids == []
     assert repository.status_updates[-1][0] == "00000000-0000-0000-0000-000000000011"
     assert repository.status_updates[-1][1] == "failed"
+    assert repository.last_directory_execution_summary == {
+        "success_jobs": 0,
+        "failed_jobs": 1,
+        "executed_skipped_jobs": 0,
+    }
+
+
+def test_import_directory_marks_pdf_child_job_failed_when_text_extraction_fails(tmp_path: Path) -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=300, height=300)
+    with (tmp_path / "scan.pdf").open("wb") as handle:
+        writer.write(handle)
+    repository = RecordingImportRepository()
+    service = ImportService(repository=repository)
+
+    result = service.import_directory(
+        ImportDirectoryRequest(path=tmp_path, recursive=False),
+    )
+
+    assert result.exit_code == 0
+    assert "success_jobs=0" in result.message
+    assert "failed_jobs=1" in result.message
+    assert repository.persisted_pdf_import_job_ids == []
+    assert repository.status_updates[-1] == (
+        "00000000-0000-0000-0000-000000000011",
+        "failed",
+        "PdfTextExtractionError: pdf_text_extraction_failed",
+    )
     assert repository.last_directory_execution_summary == {
         "success_jobs": 0,
         "failed_jobs": 1,

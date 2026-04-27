@@ -12,6 +12,8 @@ import tempfile
 from pathlib import Path
 
 import psycopg
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SAMPLE = """---
@@ -83,6 +85,34 @@ def parse_cli_output(output: str) -> dict[str, str]:
     return result
 
 
+def write_text_pdf(path: Path, page_texts: list[str]) -> None:
+    writer = PdfWriter()
+
+    for page_text in page_texts:
+        page = writer.add_blank_page(width=300, height=300)
+        stream = DecodedStreamObject()
+        escaped_text = page_text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream.set_data(f"BT /F1 12 Tf 72 200 Td ({escaped_text}) Tj ET".encode("utf-8"))
+        font = DictionaryObject()
+        font.update(
+            {
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }
+        )
+        font_ref = writer._add_object(font)
+        resources = DictionaryObject()
+        fonts = DictionaryObject()
+        fonts[NameObject("/F1")] = font_ref
+        resources[NameObject("/Font")] = fonts
+        page[NameObject("/Resources")] = resources
+        page[NameObject("/Contents")] = writer._add_object(stream)
+
+    with path.open("wb") as handle:
+        writer.write(handle)
+
+
 def fetch_child_jobs(connection: psycopg.Connection, batch_job_id: str) -> list[dict[str, str]]:
     with connection.cursor() as cursor:
         cursor.execute(
@@ -139,7 +169,7 @@ def main() -> int:
         empty_path = root / "d.md"
 
         markdown_path.write_text(DEFAULT_SAMPLE, encoding="utf-8")
-        pdf_path.write_text("pdf", encoding="utf-8")
+        write_text_pdf(pdf_path, ["PDF verification body"])
         text_path.write_text("txt", encoding="utf-8")
         empty_path.write_text("", encoding="utf-8")
 
@@ -222,20 +252,20 @@ def main() -> int:
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
     expected_counts = {
-        "sources": 1,
+        "sources": 2,
         "import_jobs": 6,
-        "documents": 1,
-        "sections": 2,
-        "chunks": 2,
+        "documents": 2,
+        "sections": 3,
+        "chunks": 3,
     }
     expected_dir_output = {
         "supported_files": "2",
         "unsupported_files": "1",
         "empty_files": "1",
         "child_jobs": "4",
-        "success_jobs": "0",
+        "success_jobs": "1",
         "failed_jobs": "0",
-        "executed_skipped_jobs": "1",
+        "executed_skipped_jobs": "0",
         "pending_jobs": "1",
         "skipped_jobs": "3",
         "skipped_unsupported": "1",
@@ -244,14 +274,14 @@ def main() -> int:
     }
     expected_child_jobs = [
         {"name": "a.md", "status": "skipped", "error_message": "content_unchanged"},
-        {"name": "b.pdf", "status": "skipped", "error_message": "pdf_parsing_not_implemented"},
+        {"name": "b.pdf", "status": "success", "error_message": ""},
         {"name": "c.txt", "status": "skipped", "error_message": "unsupported_file_type"},
         {"name": "d.md", "status": "skipped", "error_message": "empty_file"},
     ]
     expected_parent_execution_summary = {
-        "success_jobs": 0,
+        "success_jobs": 1,
         "failed_jobs": 0,
-        "executed_skipped_jobs": 1,
+        "executed_skipped_jobs": 0,
     }
 
     if file_completed.returncode != 0 or dir_completed.returncode != 0:

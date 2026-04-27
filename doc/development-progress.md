@@ -17,6 +17,55 @@
 
 ### 2026-04-26
 
+#### 记录 028：完成模块 04 任务 04-05，打通目录 PDF 执行并升级本地验收链路
+
+- 状态：已完成
+- 范围：完成模块 04 中以下任务：
+  - 任务 04：让目录导入执行阶段真正消费 PDF 子任务
+  - 任务 05：补 PDF 本地验收脚本与 README 说明
+- 结果：
+  - 目录导入执行阶段中的 PDF 子任务，已不再使用 `pdf_parsing_not_implemented` 的执行期跳过逻辑
+  - 当前目录中的可复制文本 PDF 子任务会复用单文件 PDF 导入主链路，执行真实状态流转：
+    - `pending -> running -> success`
+    - 提取失败时回写为 `failed`
+  - 当前目录执行统计中，PDF 子任务结果会真实计入：
+    - `success_jobs`
+    - `failed_jobs`
+  - `scripts/verify_local_directory_import.py` 已升级为真实生成可提取文本 PDF，并按新口径校验目录导入结果
+  - `README.md` 与 `scripts/README.md` 已同步更新目录 PDF 执行行为说明
+- 验证结果：
+  - `python3 -m pytest tests/test_cli.py` 通过，当前共 24 个测试
+  - `python3 -m py_compile scripts/verify_local_directory_import.py` 通过
+  - 真实执行 `PYTHONPATH=src /opt/miniconda3/bin/python3 scripts/verify_local_directory_import.py` 成功，退出码为 `0`
+  - 本次真实目录导入返回：
+    - `batch_job_id = f45190b0-7f03-4cc1-a948-3273b869b132`
+    - `success_jobs = 1`
+    - `failed_jobs = 0`
+    - `executed_skipped_jobs = 0`
+    - `pending_jobs = 1`
+    - `skipped_jobs = 3`
+  - 针对该批次父任务的数据库回查结果为：
+    - `input_payload.execution_summary.success_jobs = 1`
+    - `input_payload.execution_summary.failed_jobs = 0`
+    - `input_payload.execution_summary.executed_skipped_jobs = 0`
+  - 针对该批次子任务的数据库回查结果为：
+    - `a.md -> skipped / content_unchanged`
+    - `b.pdf -> success`
+    - `c.txt -> skipped / unsupported_file_type`
+    - `d.md -> skipped / empty_file`
+  - 本次真实验收的总增量为：
+    - `sources +2`
+    - `import_jobs +6`
+    - `documents +2`
+    - `sections +3`
+    - `chunks +3`
+- 遗留问题：
+  - 当前目录 PDF 执行仍只覆盖可复制文本 PDF
+  - 当前未纳入 OCR
+- 下一步：
+  - 模块 04 的 5 个任务已全部完成
+  - 下一阶段可开始讨论模块 05 的目标与任务拆分
+
 #### 记录 027：完成模块 04 任务 03，将 PDF 接入统一导入落库链路
 
 - 状态：已完成
@@ -887,5 +936,5 @@
 | 01 | 明确 PDF 第一阶段解析策略 | 已完成 | 已限定为可复制文本 PDF，按页切 section |
 | 02 | 实现 PDF 单文件读取与文本提取 | 已完成 | 已接入 `pypdf` 和页级 section 提取 |
 | 03 | 将 PDF 接入统一导入落库链路 | 已完成 | 已写入 `document_type=pdf` 与 `chunk.page_number` |
-| 04 | 让目录导入执行阶段真正消费 PDF 子任务 | 未开始 | 替换当前执行期跳过逻辑 |
-| 05 | 补 PDF 本地验收脚本与 README 说明 | 未开始 | 支撑后续回归验证 |
+| 04 | 让目录导入执行阶段真正消费 PDF 子任务 | 已完成 | 已复用真实 PDF 导入链路 |
+| 05 | 补 PDF 本地验收脚本与 README 说明 | 已完成 | 已升级目录 PDF 验收脚本和文档说明 |

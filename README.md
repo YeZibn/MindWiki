@@ -59,7 +59,7 @@ Current CLI behavior:
 - `import dir` checks whether the path exists and whether it is a directory
 - `import dir` currently creates a batch job plus file child jobs; supported files with the same `file_path` and same `content_hash` as an existing document are marked as `skipped` with `error_message=content_unchanged`
 - `import dir` currently prints a lightweight summary including `pending_jobs`, `skipped_jobs`, `skipped_unsupported`, `skipped_empty`, and `skipped_unchanged`
-- `import dir` now also consumes newly created `pending` child jobs in the same command: Markdown child jobs are executed immediately, while PDF child jobs are currently marked as `skipped` with `error_message=pdf_parsing_not_implemented`
+- `import dir` now also consumes newly created `pending` child jobs in the same command: Markdown child jobs are executed immediately, and copyable-text PDF child jobs are also executed through the real PDF import path
 - current execution output also includes `success_jobs`, `failed_jobs`, and `executed_skipped_jobs`
 - the parent directory job currently keeps `status=success` and writes the execution aggregate back to `input_payload.execution_summary`
 - `--tag` can be repeated
@@ -69,9 +69,9 @@ Current CLI behavior:
 Current limitation:
 
 - `.pdf` single-file parsing currently only supports copyable-text PDFs
-- `.pdf` directory execution is not yet connected to real PDF persistence
+- `.pdf` directory execution currently only supports copyable-text PDFs
 - if `MINDWIKI_DATABASE_URL` is missing, persistence is skipped and the CLI will report `reason=database_url_missing`
-- PDF OCR and PDF directory execution will be added in later development tasks
+- PDF OCR and more advanced PDF processing will be added in later development tasks
 
 PostgreSQL persistence setup:
 
@@ -122,6 +122,7 @@ The directory verification script will:
 - verify `success_jobs`, `failed_jobs`, and `executed_skipped_jobs`
 - query child jobs for the generated `batch_job_id`
 - verify the parent directory job payload contains `execution_summary`
+- verify that the PDF child job is executed through the real PDF import path
 
 Current status conventions:
 

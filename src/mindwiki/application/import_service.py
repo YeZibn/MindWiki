@@ -333,12 +333,14 @@ class ImportService:
                 continue
 
             if child_job.detected_file_type == ".pdf":
-                self._repository.update_import_job_status(
-                    child_job.import_job_id,
-                    "skipped",
-                    error_message="pdf_parsing_not_implemented",
+                result = self._import_pdf_file(
+                    child_request,
+                    import_job_id=child_job.import_job_id,
                 )
-                summary.skipped_jobs += 1
+                if result.exit_code == 0:
+                    summary.success_jobs += 1
+                else:
+                    summary.failed_jobs += 1
 
         return summary
 
