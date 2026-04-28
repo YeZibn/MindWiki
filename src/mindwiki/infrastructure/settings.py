@@ -38,12 +38,35 @@ def _load_dotenv_file(path: Path) -> None:
 @dataclass(slots=True)
 class Settings:
     database_url: str = ""
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model_id: str = ""
+    llm_model_mini_id: str = ""
+    llm_timeout_ms: int = 30000
+
+
+def _get_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name, "")
+    if not raw_value:
+        return default
+
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     _load_dotenv_file(DOTENV_PATH)
-    return Settings(database_url=os.getenv("MINDWIKI_DATABASE_URL", ""))
+    return Settings(
+        database_url=os.getenv("MINDWIKI_DATABASE_URL", ""),
+        llm_base_url=os.getenv("LLM_BASE_URL", ""),
+        llm_api_key=os.getenv("LLM_API_KEY", ""),
+        llm_model_id=os.getenv("LLM_MODEL_ID", ""),
+        llm_model_mini_id=os.getenv("LLM_MODEL_MINI_ID", ""),
+        llm_timeout_ms=_get_int_env("LLM_TIMEOUT_MS", 30000),
+    )
 
 
 def clear_settings_cache() -> None:

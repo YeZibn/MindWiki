@@ -17,6 +17,135 @@
 
 ### 2026-04-28
 
+#### 记录 033：完成模块 05 任务 02，建立统一 `LLMRequest / LLMResponse` 协议
+
+- 状态：已完成
+- 范围：完成模块 05 中“任务 02：建立统一 `LLMRequest / LLMResponse` 协议”
+- 结果：
+  - 已新增 `src/mindwiki/llm/models.py`，建立第一版统一协议模型：
+    - `LLMMessage`
+    - `RetryPolicy`
+    - `ValidationIssue`
+    - `ValidationResult`
+    - `LLMValidation`
+    - `ResponseTiming`
+    - `LLMError`
+    - `LLMRequest`
+    - `LLMResponse`
+  - `LLMRequest` 当前已承接第一版最小请求字段：
+    - `task_type`
+    - `model`
+    - `messages`
+    - `temperature`
+    - `top_p`
+    - `max_tokens`
+    - `response_format`
+    - `stream`
+    - `timeout_ms`
+    - `retry_policy`
+    - `metadata`
+  - `LLMResponse` 当前已承接第一版最小返回字段：
+    - `request_id`
+    - `model`
+    - `output_text`
+    - `status`
+    - `parsed_output`
+    - `validation`
+    - `timing`
+    - `error`
+    - `provider_response_id`
+    - `finish_reason`
+    - `usage`
+    - `raw_response`
+  - 已扩展 `src/mindwiki/infrastructure/settings.py`，增加 LLM 相关配置读取：
+    - `LLM_BASE_URL`
+    - `LLM_API_KEY`
+    - `LLM_MODEL_ID`
+    - `LLM_MODEL_MINI_ID`
+    - `LLM_TIMEOUT_MS`
+  - 已更新 `.env.example`，补充 LLM 配置占位示例，但未写入真实密钥
+  - 已新增 `tests/test_llm_models.py`，覆盖：
+    - `LLMRequest` 字段结构
+    - `LLMResponse` 校验与错误字段
+    - `.env` 中 LLM 配置读取行为
+- 验证结果：
+  - `python3 -m pytest tests/test_llm_models.py tests/test_cli.py` 通过
+  - 当前共 `27` 个测试，全部通过
+- 遗留问题：
+  - 当前还没有 provider 实现，协议尚未真正发起 HTTP 调用
+  - 当前还没有 `generate_text` 服务入口
+  - `citation_validation` 目前只是协议占位，尚未接入真实证据集校验
+- 下一步：
+  - 进入模块 05 任务 03：实现最小 provider 适配器
+
+#### 记录 032：完成模块 05 任务 01，LLM 设计对接与当前代码差异修正
+
+- 状态：已完成
+- 范围：完成模块 05 中“任务 01：LLM 设计对接与当前代码差异修正”
+- 结果：
+  - 已对照 `Step 15.1 ~ 15.7` 与当前代码结构完成第一轮对接
+  - 已确认当前工程现状：
+    - 目前只有导入链路与 PostgreSQL 持久化能力
+    - CLI 仅包含 `import file` / `import dir`
+    - `src/mindwiki/infrastructure/settings.py` 当前只承接 `MINDWIKI_DATABASE_URL`
+    - 当前没有任何模型请求协议、provider 适配器、模型服务入口、输出校验或调用观测实现
+  - 已确认模块 05 第一版应收敛为“模型服务层基础能力”，而不是直接实现完整 RAG 问答
+  - 已确认第一版优先落地范围：
+    - 建立统一 `LLMRequest / LLMResponse` 基础模型
+    - 建立最小 provider 抽象与一个 `OpenAI-compatible /chat/completions` 适配器
+    - 建立 `generate_text` 单一能力入口，先证明真实模型调用链路可跑通
+    - 建立最小调用控制字段承接：
+      - `request_id`
+      - `attempt_id`
+      - `timeout_ms`
+      - `max_retries`
+      - `allow_fallback`
+    - 建立最小返回承接：
+      - `parsed_output`
+      - `validation`
+      - `timing`
+      - `status`
+      - `error`
+  - 已确认第一版暂不进入的范围：
+    - `generate_subqueries`
+    - `generate_step_back_query`
+    - `generate_hyde_query`
+    - `rerank_with_llm`
+    - 多 provider 智能路由
+    - 复杂 quota / 并发控制
+    - 重型 tracing / 持久化调用日志平台
+    - 与检索编排层、最终问答层的完整集成
+  - 已确认建议的最小工程落点：
+    - `src/mindwiki/llm/models.py`
+      - 放 `LLMRequest`、`LLMResponse`、重试策略、校验结果等基础模型
+    - `src/mindwiki/llm/service.py`
+      - 放统一 `generate_text` 入口与最小调用生命周期控制
+    - `src/mindwiki/llm/providers/`
+      - 放 provider 协议与 `OpenAI-compatible` 适配器
+    - `src/mindwiki/infrastructure/settings.py`
+      - 扩展 LLM 相关配置读取
+    - `tests/`
+      - 先补协议、provider 适配与 `generate_text` 的最小单测
+- 当前识别的关键配置缺口：
+  - `.env.example` 目前只有数据库配置
+  - 第一版至少需要新增：
+    - `LLM_BASE_URL`
+    - `LLM_API_KEY`
+    - `LLM_MODEL_ID`
+    - 可选的 `LLM_TIMEOUT_MS`
+- 设计对接结论：
+  - `15.2` 统一调用协议可以先收敛为最小 `system + user` 消息结构
+  - `15.4` 生命周期控制第一版先实现超时、有限重试和标准错误分类承接，不先做复杂 fallback 链
+  - `15.5` 结构化输出校验第一版先承接 `protocol_validation` 与 `schema_validation`，`citation_validation` 留待后续真正接入检索证据集后再落
+  - `15.6` 成本、配额、并发控制第一版先保留字段与配置入口，不在当前任务中做重实现
+  - `15.7` 调用观测第一版先保留内存级/返回级摘要字段，不立即新增数据库日志表
+- 遗留问题：
+  - 当前还未确定第一版实际对接的 provider 与模型名称
+  - 当前还未引入任何 HTTP 客户端依赖
+  - 当前 README 尚未说明 LLM 本地配置与最小验证方式
+- 下一步：
+  - 进入模块 05 任务 02：建立统一 `LLMRequest / LLMResponse` 协议
+
 #### 记录 031：将模块 05 调整为 LLM 接入基础模块 MVP
 
 - 状态：进行中
@@ -1059,8 +1188,8 @@
 
 | 任务 | 内容 | 状态 | 备注 |
 | --- | --- | --- | --- |
-| 01 | LLM 设计对接与当前代码差异修正 | 未开始 | 先对照 Step 15 与当前工程收敛模块边界 |
-| 02 | 建立统一 `LLMRequest / LLMResponse` 协议 | 未开始 | 对齐 `15.2` 的最小请求响应模型 |
+| 01 | LLM 设计对接与当前代码差异修正 | 已完成 | 已收敛第一版模块边界、目录建议与配置缺口 |
+| 02 | 建立统一 `LLMRequest / LLMResponse` 协议 | 已完成 | 已完成协议模型、配置读取和最小单测 |
 | 03 | 实现最小 provider 适配器 | 未开始 | 先接一个 `OpenAI-compatible /chat/completions` provider |
 | 04 | 实现 `generate_text` 最小可用链路 | 未开始 | 先证明 LLM 模块可真实发起调用 |
 | 05 | 补调用生命周期控制与失败处理 | 未开始 | 对齐超时、重试、fallback、request_id 等最小控制 |
