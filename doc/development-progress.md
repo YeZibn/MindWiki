@@ -17,6 +17,49 @@
 
 ### 2026-04-28
 
+#### 记录 035：完成模块 05 任务 04，实现 `generate_text` 最小可用链路
+
+- 状态：已完成
+- 范围：完成模块 05 中“任务 04：实现 `generate_text` 最小可用链路”
+- 结果：
+  - 已新增 `src/mindwiki/llm/service.py`
+  - 已建立第一版 `generate_text` 服务入口：
+    - `GenerateTextInput`
+    - `LLMService`
+    - `build_llm_service()`
+  - 当前 `generate_text` 已支持的最小能力包括：
+    - 将 `system_prompt + user_prompt` 组装为统一 `LLMRequest`
+    - 自动补齐 `request_id`
+    - 自动写入 `interface_name=generate_text`
+    - 承接 `task_type`
+    - 承接 `model`
+    - 承接 `temperature / top_p / max_tokens`
+    - 承接 `response_format`
+    - 承接 `max_retries / allow_fallback`
+    - 未显式传入时，从 settings 读取 `LLM_TIMEOUT_MS`
+    - 通过默认 provider 装配 `OpenAI-compatible /chat/completions` 适配器
+  - 已新增 `tests/test_llm_service.py`，覆盖：
+    - `generate_text` 请求装配
+    - 默认超时读取
+    - settings 驱动的默认 service/provider 装配
+  - 当前 `generate_text` 已不再只是协议或 provider 级占位，而是形成了真实可调用的服务入口
+- 验证结果：
+  - `python3 -m pytest tests/test_llm_models.py tests/test_llm_provider.py tests/test_llm_service.py tests/test_cli.py` 通过
+  - 当前共 `36` 个测试，全部通过
+  - 已使用真实配置完成一次最小模型调用验证：
+    - `LLM_BASE_URL = https://kuaipao.ai/v1`
+    - `LLM_MODEL_ID = gpt-5.4`
+    - 返回 `status = success`
+    - 返回 `output_text = MINDWIKI_LLM_OK`
+    - `finish_reason = stop`
+    - `usage.total_tokens = 55`
+- 遗留问题：
+  - 当前还没有统一的重试循环和 fallback 生命周期控制
+  - 当前还没有结构化输出 schema 校验与 repair
+  - 当前还没有 README 和本地验收脚本说明
+- 下一步：
+  - 进入模块 05 任务 05：补调用生命周期控制与失败处理
+
 #### 记录 034：完成模块 05 任务 03，实现最小 provider 适配器
 
 - 状态：已完成
@@ -1235,7 +1278,7 @@
 | 01 | LLM 设计对接与当前代码差异修正 | 已完成 | 已收敛第一版模块边界、目录建议与配置缺口 |
 | 02 | 建立统一 `LLMRequest / LLMResponse` 协议 | 已完成 | 已完成协议模型、配置读取和最小单测 |
 | 03 | 实现最小 provider 适配器 | 已完成 | 已完成 `OpenAI-compatible /chat/completions` 适配器与错误映射 |
-| 04 | 实现 `generate_text` 最小可用链路 | 未开始 | 先证明 LLM 模块可真实发起调用 |
+| 04 | 实现 `generate_text` 最小可用链路 | 已完成 | 已完成 service 入口并通过真实网关 smoke test |
 | 05 | 补调用生命周期控制与失败处理 | 未开始 | 对齐超时、重试、fallback、request_id 等最小控制 |
 | 06 | 补结构化输出校验与返回约定 | 未开始 | 对齐 `parsed_output / validation / error` 的最小承接 |
 | 07 | 补 README、本地配置说明与验收脚本 | 未开始 | 支撑真实本地联调与回归验证 |
