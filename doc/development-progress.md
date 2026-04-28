@@ -15,6 +15,92 @@
 
 ## 开发记录
 
+### 2026-04-28
+
+#### 记录 030：完成模块 05 任务 01，检索前置能力对接与差异修正
+
+- 状态：已完成
+- 范围：完成模块 05 中“任务 01：检索设计对接与差异修正”
+- 结果：
+  - 已对照 Step 08 / Step 09 设计与当前代码、数据库结构完成第一轮对接
+  - 已确认当前实现与设计一致的部分：
+    - 第一阶段检索主对象统一为 `chunk`
+    - PDF 已具备最小 `page_number` 定位承接
+    - `document_title / section_title / chunk_text / source_type` 已具备最小数据基础
+    - 后续可围绕统一 `chunk hit` 返回结构继续实现
+  - 已确认当前实现与设计存在的主要差异：
+    - `document_tags` 尚未真实落库，因此模块 05 当前阶段不能把标签查询作为已实现能力
+    - Markdown 尚未真实落库 `line_start / line_end`，因此 citation `location` 只能先提供最小版本
+    - 当前尚无 embedding、vector index、hybrid fusion，因此 `retrieval_mode` 暂不能完整实现设计中的 `hybrid / vector_only / bm25_only`
+    - 当前尚无 `match_sources / score_breakdown / snippet` 的真实返回承接
+    - Step 09 的 `sub-query / rerank / context builder` 依赖检索基础层先落稳，本模块不直接跨入完整编排实现
+  - 基于上述差异，已将模块 05 当前阶段的目标修正为：
+    - 先补齐检索前置能力，而不是直接进入检索实现
+    - 先修正 Step 08 / Step 09 依赖的关键数据承接差异
+    - 先为后续 BM25、vector、hybrid、citation payload 提供稳定基础
+    - 不直接进入 Step 09 的编排层完整实现
+  - 当前阶段正式收敛后的实现边界为：
+    - 优先补：
+      - 标签真实落库
+      - 最小定位信息持久化
+      - 统一检索结果所需的最小数据投影
+    - 暂不承诺：
+      - `bm25_only` 检索路径
+      - `vector_only` 检索路径
+      - `hybrid` 检索路径
+      - rerank
+      - context builder
+    - citation `location` 当前目标调整为先补最小承接字段，而不是立即完成完整返回协议
+- 遗留问题：
+  - 若后续希望完整对齐 `8.4` 中的 `document_tags` 命中能力，需要先补标签真实落库
+  - 若后续希望完整对齐 `9.6` 的 Markdown 跳转能力，需要先补 `line_start / line_end` 的真实持久化
+  - 检索真正实现前，仍需先补最小数据投影与前置验证能力
+- 下一步：
+  - 进入模块 05 任务 02：补标签真实落库与文档级标签承接
+
+#### 记录 029：确定模块 05 为检索前置能力对齐 MVP
+
+- 状态：进行中
+- 范围：将第五个开发模块正式定义为“检索前置能力对齐 MVP”，在 Step 08 和 Step 09 设计已完成、模块 04 已完成导入与入库闭环的基础上，先补齐检索真正落地前所需的关键数据基础与设计对接
+- 结果：
+  - 明确模块 05 不直接进入 embedding、vector retrieval、hybrid fusion、rerank 和 context builder 的完整实现
+  - 明确模块 05 的目标是“先完成检索设计与当前实现的对接修正，再补齐检索前置能力”
+  - 明确模块 05 当前阶段只先实现：
+    - 标签真实落库与文档级标签承接
+    - 最小定位信息持久化
+    - 统一检索结果所需的最小数据投影
+    - 检索前置能力的本地验收脚本
+  - 明确模块 05 的任务 01 主要用于“对接工作”，需要显式对照 Step 08 / Step 09 和当前代码状态，修正设计目标与落地现状之间的出入
+- 当前已识别的设计与实现差异：
+  - Step 08 设计中包含 `tags / source_types / time_range / document_scope` 强过滤，但当前代码里 `tags` 尚未真实落库到 `tags/document_tags`
+  - Step 09 / `9.6` 的 citation `location` 已有设计，但当前实现仅具备较粗粒度定位：
+    - Markdown 尚未真实落库 `line_start / line_end`
+    - PDF 当前只有 `chunks.page_number`
+  - Step 08 设计中 `retrieval_mode` 支持 `hybrid / vector_only / bm25_only`，但当前尚无 embedding、vector index 和 hybrid fusion 能力
+  - Step 08 设计中的 `match_sources / score_breakdown / snippet` 返回结构尚无真实实现承接
+  - Step 09 的 sub-query / rerank / context builder 依赖检索基础层先稳定落地，因此模块 05 不应直接跨到编排层完整实现
+- 模块目标：
+  - 完成 Step 08 / Step 09 与当前实现的差异对接
+  - 补齐标签、定位信息和最小结果投影等检索前置能力
+  - 为后续 BM25、vector、hybrid 和 citation payload 提供稳定数据基础
+  - 提供检索前置能力的本地验收脚本和 README 说明
+- 分步任务拆解：
+  - 任务 01：检索设计对接与差异修正
+  - 任务 02：补标签真实落库与文档级标签承接
+  - 任务 03：补最小定位信息持久化
+  - 任务 04：补统一检索结果所需的最小数据投影
+  - 任务 05：补检索前置能力的本地验收脚本与 README 说明
+- 当前建议执行顺序：
+  - 先完成设计与当前实现的差异对接
+  - 再补标签与定位信息
+  - 然后补最小结果投影
+  - 最后补本地验收
+- 遗留问题：
+  - 当前检索相关设计虽然已完成 Step 08 / Step 09，但仍需先与现有入库结构逐项对齐
+  - 当前代码尚未建立任何正式检索层实现
+- 下一步：
+  - 开始模块 05 任务 01：检索设计对接与差异修正
+
 ### 2026-04-26
 
 #### 记录 028：完成模块 04 任务 04-05，打通目录 PDF 执行并升级本地验收链路
@@ -938,3 +1024,13 @@
 | 03 | 将 PDF 接入统一导入落库链路 | 已完成 | 已写入 `document_type=pdf` 与 `chunk.page_number` |
 | 04 | 让目录导入执行阶段真正消费 PDF 子任务 | 已完成 | 已复用真实 PDF 导入链路 |
 | 05 | 补 PDF 本地验收脚本与 README 说明 | 已完成 | 已升级目录 PDF 验收脚本和文档说明 |
+
+### 模块 05：检索前置能力对齐 MVP
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 检索设计对接与差异修正 | 已完成 | 已收敛模块 05 当前阶段边界与差异清单 |
+| 02 | 补标签真实落库与文档级标签承接 | 未开始 | 为 `document_tags` 命中能力补数据基础 |
+| 03 | 补最小定位信息持久化 | 未开始 | 优先补 Markdown 与 PDF 的最小定位承接 |
+| 04 | 补统一检索结果所需的最小数据投影 | 未开始 | 为 `chunk hit` / citation payload 做数据准备 |
+| 05 | 补检索前置能力的本地验收脚本与 README 说明 | 未开始 | 支撑后续回归验证 |

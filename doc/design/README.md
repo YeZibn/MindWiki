@@ -25,4 +25,4 @@
 - `step-12-evaluation`
 - `step-13-knowledge-management-features`
 - `step-14-engineering-foundation`
-
+- `step-15-llm-module-and-model-service`
