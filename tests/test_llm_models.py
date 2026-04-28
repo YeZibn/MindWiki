@@ -14,6 +14,7 @@ from mindwiki.llm.models import (
     ValidationIssue,
     ValidationResult,
 )
+from mindwiki.llm.providers.openai_compatible import OpenAICompatibleConfig
 
 
 def test_llm_request_keeps_openai_compatible_fields() -> None:
@@ -123,3 +124,15 @@ def test_settings_reads_llm_configuration_from_dotenv(tmp_path: Path, monkeypatc
     assert settings.llm_timeout_ms == 45000
 
     settings_module.clear_settings_cache()
+
+
+def test_openai_compatible_config_accepts_settings_values() -> None:
+    config = OpenAICompatibleConfig(
+        base_url="https://kuaipao.ai/v1",
+        api_key="test-key",
+        default_model="gpt-5.4",
+    )
+
+    assert config.base_url == "https://kuaipao.ai/v1"
+    assert config.api_key == "test-key"
+    assert config.default_model == "gpt-5.4"

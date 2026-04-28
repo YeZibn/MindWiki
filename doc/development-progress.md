@@ -17,6 +17,50 @@
 
 ### 2026-04-28
 
+#### 记录 034：完成模块 05 任务 03，实现最小 provider 适配器
+
+- 状态：已完成
+- 范围：完成模块 05 中“任务 03：实现最小 provider 适配器”
+- 结果：
+  - 已新增 `src/mindwiki/llm/providers/openai_compatible.py`
+  - 已建立第一版 `OpenAI-compatible /chat/completions` 适配器：
+    - `OpenAICompatibleConfig`
+    - `OpenAICompatibleProvider`
+  - 当前 provider 已支持的最小能力包括：
+    - 将统一 `LLMRequest` 转换为 `/chat/completions` 请求 payload
+    - 组装 `Authorization: Bearer <api_key>` 请求头
+    - 以 `POST {base_url}/chat/completions` 发起调用
+    - 将 provider 返回解析为统一 `LLMResponse`
+    - 承接 `output_text`
+    - 承接 `provider_response_id`
+    - 承接 `finish_reason`
+    - 承接 `usage`
+    - 对缺失 `choice` 或空 `message.content` 的返回标记 `protocol_validation_failed`
+    - 对 `HTTPError` 和 `URLError` 做最小错误归一化
+  - 当前错误映射策略已落地：
+    - `429` 和 `5xx` 归为可重试 `http_error`
+    - 其他 HTTP 错误归为不可重试 `http_error`
+    - 网络错误归为可重试 `network_error`
+  - 本轮实现仍保持边界收敛：
+    - 尚未引入 service 层统一重试循环
+    - 尚未发起真实业务级 `generate_text` 调用
+    - 尚未接入结构化 schema 校验与 repair
+  - 已新增 `tests/test_llm_provider.py`，覆盖：
+    - payload 组装
+    - 成功响应解析
+    - `missing_choice` 协议失败
+    - `HTTP 429` 错误映射
+    - 网络错误映射
+- 验证结果：
+  - `python3 -m pytest tests/test_llm_models.py tests/test_llm_provider.py tests/test_cli.py` 通过
+  - 当前共 `33` 个测试，全部通过
+- 遗留问题：
+  - 当前 provider 还没有从 service 层统一装配
+  - 当前尚未使用真实 `.env` 配置发起一次端到端模型调用
+  - README 还未说明 LLM 本地联调方式
+- 下一步：
+  - 进入模块 05 任务 04：实现 `generate_text` 最小可用链路
+
 #### 记录 033：完成模块 05 任务 02，建立统一 `LLMRequest / LLMResponse` 协议
 
 - 状态：已完成
@@ -1190,7 +1234,7 @@
 | --- | --- | --- | --- |
 | 01 | LLM 设计对接与当前代码差异修正 | 已完成 | 已收敛第一版模块边界、目录建议与配置缺口 |
 | 02 | 建立统一 `LLMRequest / LLMResponse` 协议 | 已完成 | 已完成协议模型、配置读取和最小单测 |
-| 03 | 实现最小 provider 适配器 | 未开始 | 先接一个 `OpenAI-compatible /chat/completions` provider |
+| 03 | 实现最小 provider 适配器 | 已完成 | 已完成 `OpenAI-compatible /chat/completions` 适配器与错误映射 |
 | 04 | 实现 `generate_text` 最小可用链路 | 未开始 | 先证明 LLM 模块可真实发起调用 |
 | 05 | 补调用生命周期控制与失败处理 | 未开始 | 对齐超时、重试、fallback、request_id 等最小控制 |
 | 06 | 补结构化输出校验与返回约定 | 未开始 | 对齐 `parsed_output / validation / error` 的最小承接 |
