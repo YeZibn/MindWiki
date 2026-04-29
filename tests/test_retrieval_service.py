@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
+import pytest
+
 from mindwiki.application.retrieval_models import (
     BM25Candidate,
     ChunkLocation,
@@ -12,7 +14,7 @@ from mindwiki.application.retrieval_models import (
     RetrievalQuery,
     VectorCandidate,
 )
-from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates
+from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates, score_hybrid_candidates
 
 
 class RecordingRetrievalRepository:
@@ -239,3 +241,135 @@ def test_merge_hybrid_candidates_preserves_single_channel_hits_and_ranks() -> No
             rank_bm25=1,
         ),
     )
+
+
+def test_score_hybrid_candidates_applies_rrf_normalization_and_final_score() -> None:
+    first_projection = build_candidate().projection
+    second_projection = ChunkProjection(
+        chunk_id=UUID("00000000-0000-0000-0000-000000000031"),
+        document_id=UUID("00000000-0000-0000-0000-000000000032"),
+        section_id=UUID("00000000-0000-0000-0000-000000000033"),
+        document_title="Semantic Notes",
+        section_title="Embeddings",
+        chunk_text="Vector retrieval handles semantic recall.",
+        source_type="markdown",
+        document_type="markdown",
+        document_tags=("vector",),
+        location=ChunkLocation(
+            chunk_index=2,
+            section_id=UUID("00000000-0000-0000-0000-000000000033"),
+            page_number=None,
+            imported_at=datetime(2026, 4, 29, 11, 0, 0),
+        ),
+    )
+    third_projection = ChunkProjection(
+        chunk_id=UUID("00000000-0000-0000-0000-000000000041"),
+        document_id=UUID("00000000-0000-0000-0000-000000000042"),
+        section_id=UUID("00000000-0000-0000-0000-000000000043"),
+        document_title="Keyword Notes",
+        section_title="BM25",
+        chunk_text="BM25 is strong at exact term recall.",
+        source_type="markdown",
+        document_type="markdown",
+        document_tags=("bm25",),
+        location=ChunkLocation(
+            chunk_index=3,
+            section_id=UUID("00000000-0000-0000-0000-000000000043"),
+            page_number=None,
+            imported_at=datetime(2026, 4, 29, 12, 0, 0),
+        ),
+    )
+
+    merged = (
+        HybridCandidate(
+            chunk_id=first_projection.chunk_id,
+            projection=first_projection,
+            vector_hit=True,
+            bm25_hit=True,
+            vector_score=0.91,
+            bm25_score=0.73,
+            rank_vector=1,
+            rank_bm25=2,
+        ),
+        HybridCandidate(
+            chunk_id=second_projection.chunk_id,
+            projection=second_projection,
+            vector_hit=True,
+            bm25_hit=False,
+            vector_score=0.88,
+            bm25_score=None,
+            rank_vector=2,
+            rank_bm25=None,
+        ),
+        HybridCandidate(
+            chunk_id=third_projection.chunk_id,
+            projection=third_projection,
+            vector_hit=False,
+            bm25_hit=True,
+            vector_score=None,
+            bm25_score=0.81,
+            rank_vector=None,
+            rank_bm25=1,
+        ),
+    )
+
+    scored = score_hybrid_candidates(merged)
+
+    assert scored[0].chunk_id == first_projection.chunk_id
+    assert scored[0].rrf_score is not None
+    assert scored[0].normalized_rrf_score == 1.0
+    assert scored[0].normalized_vector_score == 1.0
+    assert scored[0].normalized_bm25_score == 0.0
+    assert scored[0].dual_hit_bonus == 1.0
+    assert scored[0].final_score == pytest.approx(0.8)
+
+    assert scored[1].chunk_id == third_projection.chunk_id
+    assert scored[1].normalized_vector_score == 0.0
+    assert scored[1].normalized_bm25_score == 1.0
+    assert scored[1].dual_hit_bonus == 0.0
+
+    assert scored[2].chunk_id == second_projection.chunk_id
+    assert scored[2].normalized_bm25_score == 0.0
+    assert scored[2].dual_hit_bonus == 0.0
+
+
+def test_score_hybrid_candidates_uses_one_when_all_values_in_a_column_are_equal() -> None:
+    projection = build_candidate().projection
+    merged = (
+        HybridCandidate(
+            chunk_id=projection.chunk_id,
+            projection=projection,
+            vector_hit=True,
+            bm25_hit=False,
+            vector_score=0.5,
+            bm25_score=None,
+            rank_vector=1,
+            rank_bm25=None,
+        ),
+        HybridCandidate(
+            chunk_id=UUID("00000000-0000-0000-0000-000000000099"),
+            projection=ChunkProjection(
+                chunk_id=UUID("00000000-0000-0000-0000-000000000099"),
+                document_id=projection.document_id,
+                section_id=projection.section_id,
+                document_title="Another",
+                section_title=projection.section_title,
+                chunk_text="Another vector hit.",
+                source_type="markdown",
+                document_type="markdown",
+                document_tags=(),
+                location=projection.location,
+            ),
+            vector_hit=True,
+            bm25_hit=False,
+            vector_score=0.5,
+            bm25_score=None,
+            rank_vector=2,
+            rank_bm25=None,
+        ),
+    )
+
+    scored = score_hybrid_candidates(merged)
+
+    assert scored[0].normalized_vector_score == 1.0
+    assert scored[1].normalized_vector_score == 1.0

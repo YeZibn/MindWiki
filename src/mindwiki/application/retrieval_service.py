@@ -15,6 +15,9 @@ from mindwiki.application.retrieval_models import (
 from mindwiki.infrastructure.retrieval_repository import RetrievalRepository, build_retrieval_repository
 
 
+RRF_K = 60
+
+
 class RetrievalService:
     """Execute first-stage retrieval requests against the configured repository."""
 
@@ -150,3 +153,167 @@ def merge_hybrid_candidates(
         )
 
     return tuple(merged.values())
+
+
+def score_hybrid_candidates(
+    candidates: tuple[HybridCandidate, ...],
+) -> tuple[HybridCandidate, ...]:
+    """Apply first-stage hybrid fusion scoring and ordering."""
+
+    if not candidates:
+        return ()
+
+    with_rrf = tuple(_apply_rrf(candidate) for candidate in candidates)
+    normalized_rrf = _normalize_candidate_field(with_rrf, "rrf_score")
+    normalized_vector = _normalize_candidate_field(normalized_rrf, "vector_score")
+    normalized_bm25 = _normalize_candidate_field(normalized_vector, "bm25_score")
+    with_final_scores = tuple(_apply_final_score(candidate) for candidate in normalized_bm25)
+
+    return tuple(
+        sorted(
+            with_final_scores,
+            key=lambda candidate: (
+                -(candidate.final_score or 0.0),
+                -(candidate.dual_hit_bonus or 0.0),
+                -(candidate.normalized_rrf_score or 0.0),
+                -(candidate.normalized_vector_score or 0.0),
+                -(candidate.normalized_bm25_score or 0.0),
+            ),
+        )
+    )
+
+
+def _apply_rrf(candidate: HybridCandidate) -> HybridCandidate:
+    vector_rrf_part = 0.0
+    if candidate.vector_hit and candidate.rank_vector is not None:
+        vector_rrf_part = 1.0 / (RRF_K + candidate.rank_vector)
+
+    bm25_rrf_part = 0.0
+    if candidate.bm25_hit and candidate.rank_bm25 is not None:
+        bm25_rrf_part = 1.0 / (RRF_K + candidate.rank_bm25)
+
+    return HybridCandidate(
+        chunk_id=candidate.chunk_id,
+        projection=candidate.projection,
+        vector_hit=candidate.vector_hit,
+        bm25_hit=candidate.bm25_hit,
+        vector_score=candidate.vector_score,
+        bm25_score=candidate.bm25_score,
+        rank_vector=candidate.rank_vector,
+        rank_bm25=candidate.rank_bm25,
+        rrf_score=vector_rrf_part + bm25_rrf_part,
+        normalized_rrf_score=candidate.normalized_rrf_score,
+        normalized_vector_score=candidate.normalized_vector_score,
+        normalized_bm25_score=candidate.normalized_bm25_score,
+        dual_hit_bonus=candidate.dual_hit_bonus,
+        final_score=candidate.final_score,
+    )
+
+
+def _normalize_candidate_field(
+    candidates: tuple[HybridCandidate, ...],
+    field_name: str,
+) -> tuple[HybridCandidate, ...]:
+    hit_values: list[float] = []
+    for candidate in candidates:
+        if field_name == "rrf_score":
+            hit_values.append(float(candidate.rrf_score or 0.0))
+        elif field_name == "vector_score":
+            if candidate.vector_hit and candidate.vector_score is not None:
+                hit_values.append(candidate.vector_score)
+        elif field_name == "bm25_score":
+            if candidate.bm25_hit and candidate.bm25_score is not None:
+                hit_values.append(candidate.bm25_score)
+        else:
+            raise ValueError(f"Unsupported normalization field: {field_name}")
+
+    if not hit_values:
+        min_value = 0.0
+        max_value = 0.0
+    else:
+        min_value = min(hit_values)
+        max_value = max(hit_values)
+
+    normalized_candidates: list[HybridCandidate] = []
+    for candidate in candidates:
+        normalized_value = _normalized_value(
+            candidate=candidate,
+            field_name=field_name,
+            min_value=min_value,
+            max_value=max_value,
+        )
+        normalized_candidates.append(
+            HybridCandidate(
+                chunk_id=candidate.chunk_id,
+                projection=candidate.projection,
+                vector_hit=candidate.vector_hit,
+                bm25_hit=candidate.bm25_hit,
+                vector_score=candidate.vector_score,
+                bm25_score=candidate.bm25_score,
+                rank_vector=candidate.rank_vector,
+                rank_bm25=candidate.rank_bm25,
+                rrf_score=candidate.rrf_score,
+                normalized_rrf_score=normalized_value if field_name == "rrf_score" else candidate.normalized_rrf_score,
+                normalized_vector_score=normalized_value if field_name == "vector_score" else candidate.normalized_vector_score,
+                normalized_bm25_score=normalized_value if field_name == "bm25_score" else candidate.normalized_bm25_score,
+                dual_hit_bonus=candidate.dual_hit_bonus,
+                final_score=candidate.final_score,
+            )
+        )
+    return tuple(normalized_candidates)
+
+
+def _normalized_value(
+    *,
+    candidate: HybridCandidate,
+    field_name: str,
+    min_value: float,
+    max_value: float,
+) -> float:
+    if field_name == "rrf_score":
+        raw_value = float(candidate.rrf_score or 0.0)
+        if max_value == min_value:
+            return 1.0
+        return (raw_value - min_value) / (max_value - min_value)
+
+    if field_name == "vector_score":
+        if not candidate.vector_hit or candidate.vector_score is None:
+            return 0.0
+        if max_value == min_value:
+            return 1.0
+        return (candidate.vector_score - min_value) / (max_value - min_value)
+
+    if field_name == "bm25_score":
+        if not candidate.bm25_hit or candidate.bm25_score is None:
+            return 0.0
+        if max_value == min_value:
+            return 1.0
+        return (candidate.bm25_score - min_value) / (max_value - min_value)
+
+    raise ValueError(f"Unsupported normalization field: {field_name}")
+
+
+def _apply_final_score(candidate: HybridCandidate) -> HybridCandidate:
+    dual_hit_bonus = 1.0 if candidate.vector_hit and candidate.bm25_hit else 0.0
+    final_score = (
+        0.50 * (candidate.normalized_rrf_score or 0.0)
+        + 0.20 * (candidate.normalized_vector_score or 0.0)
+        + 0.20 * (candidate.normalized_bm25_score or 0.0)
+        + 0.10 * dual_hit_bonus
+    )
+    return HybridCandidate(
+        chunk_id=candidate.chunk_id,
+        projection=candidate.projection,
+        vector_hit=candidate.vector_hit,
+        bm25_hit=candidate.bm25_hit,
+        vector_score=candidate.vector_score,
+        bm25_score=candidate.bm25_score,
+        rank_vector=candidate.rank_vector,
+        rank_bm25=candidate.rank_bm25,
+        rrf_score=candidate.rrf_score,
+        normalized_rrf_score=candidate.normalized_rrf_score,
+        normalized_vector_score=candidate.normalized_vector_score,
+        normalized_bm25_score=candidate.normalized_bm25_score,
+        dual_hit_bonus=dual_hit_bonus,
+        final_score=final_score,
+    )

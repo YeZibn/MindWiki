@@ -17,6 +17,63 @@
 
 ### 2026-04-29
 
+#### 记录 058：完成模块 08 任务 03，实现 `hybrid` 去重、RRF 与加权融合
+
+- 状态：已完成
+- 范围：完成模块 08 中“任务 03：实现 `hybrid` 去重、RRF 与加权融合”
+- 结果：
+  - 已扩展 `src/mindwiki/application/retrieval_service.py`
+  - 已新增第一版纯函数化融合算法：
+    - `score_hybrid_candidates()`
+  - 当前融合算法已正式落地 `Step 8.7` 第一阶段规则：
+    - RRF 固定常数：
+      - `k = 60`
+    - `rrf_score = vector_rrf_part + bm25_rrf_part`
+    - `min-max normalization`
+    - `dual_hit_bonus`
+    - `final_score`
+  - 当前已按设计稿实现以下细节：
+    - rank 从 `1` 开始
+    - 未命中的通道分数记 `0`
+    - 若某一路所有值相同，则该列统一归一化为 `1.0`
+    - `final_score` 采用：
+      - `0.50 * normalized_rrf_score`
+      - `0.20 * normalized_vector_score`
+      - `0.20 * normalized_bm25_score`
+      - `0.10 * dual_hit_bonus`
+  - 当前混合排序已按以下规则稳定输出：
+    - 先按 `final_score` 降序
+    - 同分时再按：
+      - `dual_hit_bonus`
+      - `normalized_rrf_score`
+      - `normalized_vector_score`
+      - `normalized_bm25_score`
+  - 当前 `HybridCandidate` 在本任务后已可承接完整融合中间态：
+    - `rrf_score`
+    - `normalized_rrf_score`
+    - `normalized_vector_score`
+    - `normalized_bm25_score`
+    - `dual_hit_bonus`
+    - `final_score`
+  - 当前实现边界保持收敛：
+    - 本任务只完成融合算法本身
+    - 尚未将 `hybrid` 接入 `RetrievalService.retrieve()`
+    - 尚未将完整融合结果映射为最终 `ChunkHit`
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_retrieval_projection.py tests/test_embedding_service.py tests/test_vector_index_service.py tests/test_llm_provider.py tests/test_llm_service.py tests/test_cli.py tests/test_llm_models.py` 通过
+  - 当前共 `58` 个测试，全部通过
+  - 已新增测试覆盖：
+    - `RRF + 加权融合` 结果
+    - 单通道缺失时归一化记 `0`
+    - 某一列全等值时归一化记 `1.0`
+    - `final_score` 排序顺序
+- 遗留问题：
+  - 当前 `hybrid` 仍未对外暴露
+  - 当前 `ChunkHit.score_breakdown` 还没有承接完整融合字段
+  - 当前还没有真实本地 `hybrid` 端到端联调
+- 下一步：
+  - 进入模块 08 任务 04：扩展统一检索 service，接入 `hybrid`
+
 #### 记录 057：完成模块 08 任务 02，扩展候选模型与融合中间结构
 
 - 状态：已完成
