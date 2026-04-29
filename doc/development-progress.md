@@ -17,6 +17,85 @@
 
 ### 2026-04-29
 
+#### 记录 054：完成模块 07 任务 07，补本地 `vector_only` 验收脚本与运行说明
+
+- 状态：已完成
+- 范围：完成模块 07 中“任务 07：补本地验收脚本、README 与运行说明”
+- 结果：
+  - 已新增 `scripts/verify_local_vector_retrieval.py`
+  - 已为 `vector_only` 模块补充第一版本地验收脚本能力：
+    - 导入一份带标签的 Markdown 样例
+    - 依赖导入时自动完成 embedding 生成与 `Milvus` 写入
+    - 执行一轮宽范围 `vector_only` 检索
+    - 执行一轮带 `tags / source_types / document_scope / time_range` 的过滤检索
+    - 校验导入文档可以在两类向量查询下被命中
+    - 校验返回中包含：
+      - `match_sources = ("vector",)`
+      - `score_breakdown.vector_score`
+  - 已更新 `README.md`，补充：
+    - `vector_only` 当前能力边界
+    - 最小 `vector_only` 调用示例
+    - 向量检索本地验收命令
+  - 已更新 `scripts/README.md`，补充 `verify_local_vector_retrieval.py` 的脚本说明
+  - 当前模块 07 已具备从 import-time embedding、`Milvus` 写入到 `vector_only` 召回与本地验收脚本的最小闭环
+- 验证结果：
+  - `python3 -m py_compile scripts/verify_local_vector_retrieval.py` 通过
+  - 已完成一次真实本地 `vector_only` 检索验证，命中 `Vector Smoke Note`
+- 遗留问题：
+  - 当前尚未实现 `hybrid`
+  - 当前尚未实现 RRF、多路融合和 rerank
+  - 当前向量本地验收脚本仍依赖真实 embedding 网关与真实 `Milvus`
+- 下一步：
+  - 模块 07 已完成，可进入下一开发模块讨论
+
+#### 记录 053：完成模块 07 任务 05-06，实现 `vector_only` 检索仓储与统一 service 接入
+
+- 状态：已完成
+- 范围：完成模块 07 中“任务 05：实现 `vector_only` 检索仓储与候选映射”“任务 06：扩展统一检索 service，接入 `vector_only`”
+- 结果：
+  - 已扩展 `src/mindwiki/application/retrieval_models.py`
+  - 已新增：
+    - `VectorCandidate`
+  - 已扩展 `src/mindwiki/infrastructure/milvus_store.py`
+  - 已新增 `search_chunk_vectors()`：
+    - 基于 query embedding 执行 `Milvus` 向量检索
+    - 默认过滤：
+      - `is_active = true`
+      - `embedding_version = v1`
+    - 支持按候选 `chunk_id` 集合约束 `Milvus` 搜索范围
+  - 已扩展 `src/mindwiki/infrastructure/retrieval_repository.py`
+  - 已建立第一版统一检索仓储组合能力：
+    - PostgreSQL 继续负责 BM25 与 chunk 投影
+    - embedding service 负责查询向量生成
+    - `Milvus` 负责 `vector_only` 相似检索
+  - 当前 `vector_only` 检索链路已按以下顺序工作：
+    - 先根据 `tags / source_types / document_scope / time_range` 在 PostgreSQL 中筛出可参与向量检索的 `chunk_id`
+    - 对 query 生成 embedding
+    - 在 `Milvus` 中执行向量搜索
+    - 回到 PostgreSQL 取回统一 `chunk projection`
+    - 映射为统一 `chunk hit`
+  - 已扩展 `src/mindwiki/application/retrieval_service.py`
+  - 当前统一检索 service 已支持：
+    - `bm25_only`
+    - `vector_only`
+  - 当前 `vector_only` 命中结果已统一收敛为：
+    - `match_sources = ("vector",)`
+    - `score_breakdown = {"vector_score": <score>}`
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_retrieval_projection.py tests/test_embedding_service.py tests/test_vector_index_service.py tests/test_llm_provider.py tests/test_llm_service.py tests/test_cli.py tests/test_llm_models.py` 通过
+  - 当前共 `54` 个测试，全部通过
+  - 已完成一次真实本地 `vector_only` 检索验证：
+    - 检索模式返回 `vector_only`
+    - 命中 `Vector Smoke Note`
+    - 返回 `vector_score`
+    - 标签过滤 `vector-smoke` 生效
+- 遗留问题：
+  - 当前尚未实现 `hybrid`
+  - 当前尚未实现多路融合、RRF 和 rerank
+  - 当前还没有单独的本地 `vector_only` 验收脚本
+- 下一步：
+  - 进入模块 07 任务 07：补本地验收脚本、README 与运行说明
+
 #### 记录 052：完成模块 07 任务 02-04，打通 embedding 与 `Milvus` 最小写入闭环
 
 - 状态：已完成

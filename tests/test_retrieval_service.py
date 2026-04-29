@@ -9,18 +9,28 @@ from mindwiki.application.retrieval_models import (
     ChunkProjection,
     RetrievalFilters,
     RetrievalQuery,
+    VectorCandidate,
 )
 from mindwiki.application.retrieval_service import RetrievalService
 
 
 class RecordingRetrievalRepository:
-    def __init__(self, candidates: tuple[BM25Candidate, ...]) -> None:
-        self._candidates = candidates
-        self.calls: list[tuple[str, RetrievalFilters, int]] = []
+    def __init__(
+        self,
+        bm25_candidates: tuple[BM25Candidate, ...],
+        vector_candidates: tuple[VectorCandidate, ...] = (),
+    ) -> None:
+        self._bm25_candidates = bm25_candidates
+        self._vector_candidates = vector_candidates
+        self.calls: list[tuple[str, str, RetrievalFilters, int]] = []
 
     def search_bm25(self, query_text: str, filters: RetrievalFilters, *, limit: int = 10):
-        self.calls.append((query_text, filters, limit))
-        return self._candidates
+        self.calls.append(("bm25_only", query_text, filters, limit))
+        return self._bm25_candidates
+
+    def search_vector(self, query_text: str, filters: RetrievalFilters, *, limit: int = 10):
+        self.calls.append(("vector_only", query_text, filters, limit))
+        return self._vector_candidates
 
 
 def build_candidate() -> BM25Candidate:
@@ -68,7 +78,7 @@ def test_retrieve_wraps_bm25_candidates_into_chunk_hits() -> None:
     assert hit.match_sources == ("section_title", "chunk_text")
     assert hit.score == 0.73
     assert hit.score_breakdown == {"bm25_score": 0.73}
-    assert repository.calls[0][2] == 3
+    assert repository.calls[0][3] == 3
 
 
 def test_retrieve_passes_strong_filters_to_repository() -> None:
@@ -88,7 +98,33 @@ def test_retrieve_passes_strong_filters_to_repository() -> None:
         )
     )
 
-    assert repository.calls == [("retrieval", filters, 5)]
+    assert repository.calls == [("bm25_only", "retrieval", filters, 5)]
+
+
+def test_retrieve_wraps_vector_candidates_into_chunk_hits() -> None:
+    vector_candidate = VectorCandidate(
+        projection=build_candidate().projection,
+        score=0.91,
+    )
+    repository = RecordingRetrievalRepository((), (vector_candidate,))
+    service = RetrievalService(repository=repository)
+
+    result = service.retrieve(
+        RetrievalQuery(
+            query="semantic recall",
+            top_k=2,
+            retrieval_mode="vector_only",
+        )
+    )
+
+    assert result.query == "semantic recall"
+    assert result.retrieval_mode == "vector_only"
+    assert len(result.hits) == 1
+    hit = result.hits[0]
+    assert hit.score == 0.91
+    assert hit.match_sources == ("vector",)
+    assert hit.score_breakdown == {"vector_score": 0.91}
+    assert repository.calls == [("vector_only", "semantic recall", RetrievalFilters(), 2)]
 
 
 def test_retrieve_rejects_non_bm25_modes() -> None:

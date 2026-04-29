@@ -84,8 +84,8 @@ Current limitation:
 - embedding integration currently supports only chunk-level vector generation for import-time indexing
 - structured output handling currently supports minimal local JSON parsing and lightweight schema checks
 - citation validation and repair retries are not implemented yet
-- retrieval currently supports only `bm25_only`
-- retrieval currently relies on PostgreSQL native full-text search and does not implement `vector_only` or hybrid recall yet
+- retrieval currently supports `bm25_only` and `vector_only`
+- hybrid recall and fusion are not implemented yet
 
 ## LLM Setup
 
@@ -152,12 +152,14 @@ print(response.output_text)
 
 ## Retrieval Setup
 
-The project now supports a first-stage `bm25_only` retrieval path backed by PostgreSQL full-text search.
+The project now supports first-stage `bm25_only` and `vector_only` retrieval paths.
 
 Current retrieval behavior:
 
 - retrieval main object is `chunk`
-- supported retrieval mode is currently only `bm25_only`
+- supported retrieval modes are currently:
+  - `bm25_only`
+  - `vector_only`
 - vector storage is now written during import when embedding and `Milvus` settings are configured
 - strong filters currently support:
   - `source_types`
@@ -170,6 +172,9 @@ Current retrieval behavior:
   - `section_title`
   - `document_tags`
   - `chunk_text`
+- `vector_only` currently returns:
+  - `match_sources = ("vector",)`
+  - `score_breakdown = {"vector_score": ...}`
 
 Minimal retrieval example:
 
@@ -187,6 +192,25 @@ result = service.retrieve(
 
 for hit in result.hits:
     print(hit.document_title, hit.score, hit.match_sources)
+```
+
+Minimal vector retrieval example:
+
+```python
+from mindwiki.application.retrieval_models import RetrievalQuery
+from mindwiki.application.retrieval_service import RetrievalService
+
+service = RetrievalService()
+result = service.retrieve(
+    RetrievalQuery(
+        query="embedding generation and vector sync verification",
+        top_k=3,
+        retrieval_mode="vector_only",
+    )
+)
+
+for hit in result.hits:
+    print(hit.document_title, hit.score, hit.score_breakdown)
 ```
 
 PostgreSQL persistence setup:
@@ -232,6 +256,7 @@ PYTHONPATH=src python3 scripts/verify_local_import.py
 PYTHONPATH=src python3 scripts/verify_local_directory_import.py
 PYTHONPATH=src python3 scripts/verify_local_llm.py
 PYTHONPATH=src python3 scripts/verify_local_retrieval.py
+PYTHONPATH=src python3 scripts/verify_local_vector_retrieval.py
 ```
 
 The verification script will:
@@ -266,6 +291,15 @@ The retrieval verification script will:
 - run one filtered retrieval query with `tags`, `source_types`, `document_scope`, and `time_range`
 - verify that the imported document can be retrieved under both query shapes
 - print a JSON summary including top hit, `match_sources`, and `score_breakdown`
+
+The vector retrieval verification script will:
+
+- import one tagged Markdown sample with import-time embedding generation enabled
+- run one broad `vector_only` retrieval query
+- run one filtered `vector_only` retrieval query with `tags`, `source_types`, `document_scope`, and `time_range`
+- verify that the imported document can be retrieved under both query shapes
+- verify that `match_sources = ("vector",)` and `score_breakdown` includes `vector_score`
+- print a JSON summary including top hit and vector score details
 
 Current status conventions:
 

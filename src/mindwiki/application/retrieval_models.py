@@ -71,6 +71,15 @@ class BM25Candidate:
 
 
 @dataclass(frozen=True, slots=True)
+class VectorCandidate:
+    """Minimal scored retrieval candidate for the vector stage."""
+
+    projection: ChunkProjection
+    score: float
+    match_sources: tuple[str, ...] = ("vector",)
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkHit:
     """Unified retrieval hit returned to upper layers."""
 

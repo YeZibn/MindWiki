@@ -37,6 +37,15 @@ class MilvusStore(Protocol):
 
     def upsert_chunk_vectors(self, records: tuple[MilvusChunkRecord, ...]) -> None: ...
 
+    def search_chunk_vectors(
+        self,
+        query_vector: tuple[float, ...],
+        *,
+        limit: int,
+        chunk_ids: tuple[str, ...] = (),
+        embedding_version: str = "v1",
+    ) -> tuple[tuple[str, float], ...]: ...
+
 
 class MilvusChunkStore:
     """Milvus-backed store for chunk vectors."""
@@ -111,6 +120,46 @@ class MilvusChunkStore:
             for record in records
         ]
         self._get_client().upsert(self._collection_name, payload)
+
+    def search_chunk_vectors(
+        self,
+        query_vector: tuple[float, ...],
+        *,
+        limit: int,
+        chunk_ids: tuple[str, ...] = (),
+        embedding_version: str = "v1",
+    ) -> tuple[tuple[str, float], ...]:
+        client = self._get_client()
+        if not client.has_collection(self._collection_name):
+            return ()
+
+        filter_clauses = ['is_active == true', f'embedding_version == "{embedding_version}"']
+        if chunk_ids:
+            serialized_ids = ", ".join(f'"{chunk_id}"' for chunk_id in chunk_ids)
+            filter_clauses.append(f"chunk_id in [{serialized_ids}]")
+
+        response = client.search(
+            collection_name=self._collection_name,
+            data=[list(query_vector)],
+            filter=" and ".join(filter_clauses),
+            limit=limit,
+            output_fields=["chunk_id"],
+            search_params={"metric_type": "COSINE"},
+            anns_field="vector",
+        )
+        if not response:
+            return ()
+
+        hits = response[0]
+        results: list[tuple[str, float]] = []
+        for hit in hits:
+            entity = hit.get("entity", {})
+            chunk_id = entity.get("chunk_id")
+            distance = hit.get("distance")
+            if not chunk_id or distance is None:
+                continue
+            results.append((str(chunk_id), float(distance)))
+        return tuple(results)
 
     def _get_client(self) -> MilvusClient:
         if self._client is None:
