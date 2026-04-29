@@ -69,6 +69,122 @@ def test_generate_text_builds_llm_request_for_provider() -> None:
     assert provider.last_request.metadata["is_fallback"] is False
 
 
+def test_generate_text_parses_json_schema_output() -> None:
+    provider = RecordingProvider()
+    service = LLMService(provider)
+    provider.generate = lambda llm_request: LLMResponse(
+        request_id=str(llm_request.metadata.get("request_id", "")),
+        model=llm_request.model or "gpt-5.4",
+        output_text='{"answer":"done","citations":[]}',
+        status="success",
+        validation=LLMValidation(final_status="accepted"),
+        timing=ResponseTiming(latency_ms=5),
+    )
+
+    response = service.generate_text(
+        GenerateTextInput(
+            system_prompt="Follow the schema.",
+            user_prompt="Question and evidence.",
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "answer",
+                    "schema": {
+                        "type": "object",
+                        "required": ["answer", "citations"],
+                        "properties": {
+                            "answer": {"type": "string"},
+                            "citations": {"type": "array"},
+                        },
+                    },
+                },
+            },
+        )
+    )
+
+    assert response.status == "success"
+    assert response.parsed_output == {"answer": "done", "citations": []}
+    assert response.validation.schema_validation.passed is True
+
+
+def test_generate_text_marks_invalid_json_as_schema_failure() -> None:
+    provider = RecordingProvider()
+    service = LLMService(provider)
+    provider.generate = lambda llm_request: LLMResponse(
+        request_id=str(llm_request.metadata.get("request_id", "")),
+        model=llm_request.model or "gpt-5.4",
+        output_text="not-json",
+        status="success",
+        validation=LLMValidation(final_status="accepted"),
+        timing=ResponseTiming(latency_ms=5),
+    )
+
+    response = service.generate_text(
+        GenerateTextInput(
+            system_prompt="Follow the schema.",
+            user_prompt="Question and evidence.",
+            allow_fallback=True,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "answer",
+                    "schema": {"type": "object"},
+                },
+            },
+        )
+    )
+
+    assert response.status == "failed"
+    assert response.error is not None
+    assert response.error.error_type == "schema_validation_failed"
+    assert response.error.fallback_allowed is True
+    assert response.validation.schema_validation.passed is False
+    assert response.validation.final_status == "repairable"
+    assert response.validation.schema_validation.issues[0].code == "json_decode_failed"
+
+
+def test_generate_text_marks_required_field_mismatch() -> None:
+    provider = RecordingProvider()
+    service = LLMService(provider)
+    provider.generate = lambda llm_request: LLMResponse(
+        request_id=str(llm_request.metadata.get("request_id", "")),
+        model=llm_request.model or "gpt-5.4",
+        output_text='{"answer":123}',
+        status="success",
+        validation=LLMValidation(final_status="accepted"),
+        timing=ResponseTiming(latency_ms=5),
+    )
+
+    response = service.generate_text(
+        GenerateTextInput(
+            system_prompt="Follow the schema.",
+            user_prompt="Question and evidence.",
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "answer",
+                    "schema": {
+                        "type": "object",
+                        "required": ["answer", "citations"],
+                        "properties": {
+                            "answer": {"type": "string"},
+                            "citations": {"type": "array"},
+                        },
+                    },
+                },
+            },
+        )
+    )
+
+    assert response.status == "failed"
+    assert response.parsed_output == {"answer": 123}
+    assert response.validation.schema_validation.passed is False
+    assert sorted(issue.code for issue in response.validation.schema_validation.issues) == [
+        "missing_required_field",
+        "type_mismatch",
+    ]
+
+
 def test_generate_text_uses_settings_timeout_when_not_overridden(
     tmp_path: Path,
     monkeypatch,

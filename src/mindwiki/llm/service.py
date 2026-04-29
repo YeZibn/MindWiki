@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import time
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from mindwiki.infrastructure.settings import get_settings
@@ -13,8 +14,11 @@ from mindwiki.llm.models import (
     LLMMessage,
     LLMRequest,
     LLMResponse,
+    LLMValidation,
     ResponseTiming,
     RetryPolicy,
+    ValidationIssue,
+    ValidationResult,
 )
 from mindwiki.llm.providers.openai_compatible import (
     OpenAICompatibleConfig,
@@ -158,7 +162,11 @@ class LLMService:
                 metadata=attempt_metadata,
                 request_timeout_ms=request_timeout_ms,
             )
-            response = provider.generate(llm_request)
+            response = self._finalize_response(
+                provider.generate(llm_request),
+                payload=payload,
+                allow_fallback=payload.allow_fallback and not is_fallback,
+            )
             if response.status == "success":
                 return response
 
@@ -263,6 +271,209 @@ class LLMService:
             ),
             timing=ResponseTiming(latency_ms=elapsed_ms),
         )
+
+    @staticmethod
+    def _finalize_response(
+        response: LLMResponse,
+        *,
+        payload: GenerateTextInput,
+        allow_fallback: bool,
+    ) -> LLMResponse:
+        if response.status != "success":
+            return response
+
+        if not payload.response_format:
+            return response
+
+        if payload.response_format.get("type") != "json_schema":
+            return response
+
+        parse_result = LLMService._parse_structured_output(response.output_text)
+        if parse_result["error"] is not None:
+            issue = ValidationIssue(
+                code="json_decode_failed",
+                path="$",
+                message=str(parse_result["error"]),
+            )
+            return LLMService._build_schema_failure_response(
+                response=response,
+                issues=(issue,),
+                final_status="repairable",
+                allow_fallback=allow_fallback,
+            )
+
+        parsed_output = parse_result["value"]
+        schema = payload.response_format.get("json_schema", {}).get("schema", {})
+        issues = tuple(
+            LLMService._validate_against_schema(
+                value=parsed_output,
+                schema=schema,
+                path="$",
+            )
+        )
+        if issues:
+            return LLMService._build_schema_failure_response(
+                response=response,
+                issues=issues,
+                final_status="repairable",
+                allow_fallback=allow_fallback,
+                parsed_output=parsed_output,
+            )
+
+        return LLMResponse(
+            request_id=response.request_id,
+            model=response.model,
+            output_text=response.output_text,
+            status="success",
+            parsed_output=parsed_output,
+            validation=LLMValidation(
+                protocol_validation=response.validation.protocol_validation,
+                schema_validation=ValidationResult(passed=True),
+                citation_validation=response.validation.citation_validation,
+                final_status="accepted",
+            ),
+            timing=response.timing,
+            error=None,
+            provider_response_id=response.provider_response_id,
+            finish_reason=response.finish_reason,
+            usage=response.usage,
+            raw_response=response.raw_response,
+        )
+
+    @staticmethod
+    def _build_schema_failure_response(
+        *,
+        response: LLMResponse,
+        issues: tuple[ValidationIssue, ...],
+        final_status: str,
+        allow_fallback: bool,
+        parsed_output: Any | None = None,
+    ) -> LLMResponse:
+        return LLMResponse(
+            request_id=response.request_id,
+            model=response.model,
+            output_text=response.output_text,
+            status="failed",
+            parsed_output=parsed_output,
+            validation=LLMValidation(
+                protocol_validation=response.validation.protocol_validation,
+                schema_validation=ValidationResult(
+                    passed=False,
+                    issues=issues,
+                ),
+                citation_validation=response.validation.citation_validation,
+                final_status=final_status,
+            ),
+            timing=response.timing,
+            error=LLMError(
+                error_type="schema_validation_failed",
+                retryable=False,
+                fallback_allowed=allow_fallback,
+                message=issues[0].message if issues else "Schema validation failed.",
+            ),
+            provider_response_id=response.provider_response_id,
+            finish_reason=response.finish_reason,
+            usage=response.usage,
+            raw_response=response.raw_response,
+        )
+
+    @staticmethod
+    def _parse_structured_output(output_text: str) -> dict[str, Any]:
+        candidates = [output_text.strip()]
+        stripped = output_text.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+            if len(lines) >= 3 and lines[-1].strip() == "```":
+                candidates.append("\n".join(lines[1:-1]).strip())
+
+        for candidate in candidates:
+            try:
+                return {"value": json.loads(candidate), "error": None}
+            except json.JSONDecodeError as exc:
+                last_error = exc
+
+        return {"value": None, "error": last_error}
+
+    @staticmethod
+    def _validate_against_schema(
+        *,
+        value: Any,
+        schema: dict[str, Any],
+        path: str,
+    ) -> list[ValidationIssue]:
+        if not schema:
+            return []
+
+        issues: list[ValidationIssue] = []
+        expected_type = schema.get("type")
+        if expected_type is not None and not LLMService._value_matches_type(value, expected_type):
+            issues.append(
+                ValidationIssue(
+                    code="type_mismatch",
+                    path=path,
+                    message=f"Expected {expected_type} at {path}.",
+                )
+            )
+            return issues
+
+        if expected_type == "object":
+            if not isinstance(value, dict):
+                return issues
+
+            required_fields = schema.get("required", [])
+            for field_name in required_fields:
+                if field_name not in value:
+                    issues.append(
+                        ValidationIssue(
+                            code="missing_required_field",
+                            path=f"{path}.{field_name}",
+                            message=f"Missing required field: {field_name}.",
+                        )
+                    )
+
+            properties = schema.get("properties", {})
+            for field_name, field_schema in properties.items():
+                if field_name not in value:
+                    continue
+                issues.extend(
+                    LLMService._validate_against_schema(
+                        value=value[field_name],
+                        schema=field_schema,
+                        path=f"{path}.{field_name}",
+                    )
+                )
+
+        if expected_type == "array":
+            if not isinstance(value, list):
+                return issues
+
+            item_schema = schema.get("items", {})
+            for index, item in enumerate(value):
+                issues.extend(
+                    LLMService._validate_against_schema(
+                        value=item,
+                        schema=item_schema,
+                        path=f"{path}[{index}]",
+                    )
+                )
+
+        return issues
+
+    @staticmethod
+    def _value_matches_type(value: Any, expected_type: str) -> bool:
+        if expected_type == "object":
+            return isinstance(value, dict)
+        if expected_type == "array":
+            return isinstance(value, list)
+        if expected_type == "string":
+            return isinstance(value, str)
+        if expected_type == "number":
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if expected_type == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if expected_type == "boolean":
+            return isinstance(value, bool)
+        return True
 
 
 def build_llm_service() -> LLMService:

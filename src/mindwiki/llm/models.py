@@ -91,7 +91,7 @@ class LLMResponse:
     model: str
     output_text: str
     status: str
-    parsed_output: dict[str, Any] | None = None
+    parsed_output: Any | None = None
     validation: LLMValidation = field(default_factory=LLMValidation)
     timing: ResponseTiming = field(default_factory=ResponseTiming)
     error: LLMError | None = None

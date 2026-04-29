@@ -17,6 +17,59 @@
 
 ### 2026-04-29
 
+#### 记录 037：完成模块 05 任务 06，补结构化输出校验与返回约定
+
+- 状态：已完成
+- 范围：完成模块 05 中“任务 06：补结构化输出校验与返回约定”
+- 结果：
+  - 已扩展 `src/mindwiki/llm/service.py`，让 `generate_text` 在 provider 成功返回后进入本地结构化校验流程
+  - 当前已落地的结构化输出承接包括：
+    - 透传并保留 `protocol_validation`
+    - 对 `response_format.type = json_schema` 的返回执行本地解析
+    - 支持最小本地轻修复：
+      - 去除 Markdown 代码块包裹后再尝试 JSON 解析
+    - 成功解析后写入 `parsed_output`
+    - 基于最小 schema 规则执行本地校验
+  - 当前已实现的 schema 校验能力包括：
+    - JSON 是否可解析
+    - `type=object`
+    - `type=array`
+    - `type=string`
+    - `type=number`
+    - `type=integer`
+    - `type=boolean`
+    - `required` 字段缺失检查
+    - `properties` 子字段递归校验
+    - `items` 数组元素递归校验
+  - 当前返回约定已收敛为：
+    - 校验通过：
+      - `status = success`
+      - `validation.final_status = accepted`
+      - `parsed_output` 可直接供上层消费
+    - 校验失败：
+      - `status = failed`
+      - `error.error_type = schema_validation_failed`
+      - `validation.final_status = repairable`
+      - `schema_validation.issues[]` 返回问题清单
+  - 当前仍保持边界收敛：
+    - 尚未实现 citation 证据集校验
+    - 尚未实现结构化 repair 重试
+    - 尚未引入完整 JSON Schema 引擎
+  - 已更新 `src/mindwiki/llm/models.py`，放宽 `parsed_output` 为通用结构化对象承接
+  - 已扩展 `tests/test_llm_service.py`，覆盖：
+    - JSON schema 成功解析
+    - 无法解析 JSON 的失败路径
+    - 必填字段缺失与类型不匹配的失败路径
+- 验证结果：
+  - `python3 -m pytest tests/test_llm_service.py tests/test_llm_provider.py tests/test_llm_models.py tests/test_cli.py` 通过
+  - 当前共 `42` 个测试，全部通过
+- 遗留问题：
+  - 当前还没有 citation validation
+  - 当前还没有 repair 调用链
+  - 当前 README 和本地验收脚本尚未补齐
+- 下一步：
+  - 进入模块 05 任务 07：补 README、本地配置说明与验收脚本
+
 #### 记录 036：完成模块 05 任务 05，补调用生命周期控制与失败处理
 
 - 状态：已完成
@@ -1327,5 +1380,5 @@
 | 03 | 实现最小 provider 适配器 | 已完成 | 已完成 `OpenAI-compatible /chat/completions` 适配器与错误映射 |
 | 04 | 实现 `generate_text` 最小可用链路 | 已完成 | 已完成 service 入口并通过真实网关 smoke test |
 | 05 | 补调用生命周期控制与失败处理 | 已完成 | 已完成 retry / deadline / fallback / attempt_id |
-| 06 | 补结构化输出校验与返回约定 | 未开始 | 对齐 `parsed_output / validation / error` 的最小承接 |
+| 06 | 补结构化输出校验与返回约定 | 已完成 | 已完成本地 JSON 解析、最小 schema 校验与问题回传 |
 | 07 | 补 README、本地配置说明与验收脚本 | 未开始 | 支撑真实本地联调与回归验证 |
