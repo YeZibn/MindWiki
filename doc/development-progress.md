@@ -17,6 +17,220 @@
 
 ### 2026-04-29
 
+#### 记录 052：完成模块 07 任务 02-04，打通 embedding 与 `Milvus` 最小写入闭环
+
+- 状态：已完成
+- 范围：完成模块 07 中“任务 02：补 embedding 输入构造与版本字段承接”“任务 03：接入 `Milvus` 配置、客户端与 collection schema”“任务 04：实现 chunk 向量写入、失效与重建承接”
+- 结果：
+  - 已新增 embedding 相关配置承接：
+    - `LLM_EMBEDDING_BASE_URL`
+    - `LLM_EMBEDDING_API_KEY`
+    - `LLM_EMBEDDING_MODEL_ID`
+    - `LLM_EMBEDDING_TIMEOUT_MS`
+  - 已新增 `Milvus` 相关配置承接：
+    - `SYSTEM_MEMORY_MILVUS_URI`
+    - `SYSTEM_MEMORY_MILVUS_TOKEN`
+    - `MILVUS_COLLECTION_NAME`
+  - 已新增 `src/mindwiki/llm/embedding_models.py`
+  - 已新增 `src/mindwiki/llm/embedding_service.py`
+  - 已基于现有 OpenAI-compatible 风格 provider 扩展 embedding 调用能力：
+    - 通过 `/embeddings` 生成批量向量
+    - 第一阶段采用 OpenAI-compatible embedding provider
+  - 已新增 `src/mindwiki/infrastructure/vector_index_repository.py`
+  - 已新增 `src/mindwiki/infrastructure/milvus_store.py`
+  - 已新增 `src/mindwiki/application/vector_index_service.py`
+  - 已正式落地 `Step 8.3` 第一阶段 embedding 输入模板：
+    - `document_title`
+    - 可选 `section_title`
+    - `chunk_text`
+    - 固定模板：
+      - `Document Title: ...`
+      - `Section Title: ...`
+      - `Content:`
+  - 已正式落地第一阶段 embedding 元数据字段：
+    - `embedding_ref`
+    - `embedding_provider`
+    - `embedding_model`
+    - `embedding_version`
+    - `embedding_dim`
+  - 当前第一阶段 embedding version 已收敛为：
+    - `v1`
+  - 已扩展 `scripts/init_local_db.sql`，为 `chunks` 表补齐 embedding 元数据列
+  - 已将 import 成功后的最小向量写入链路挂入 `ImportService`：
+    - PostgreSQL 落库成功后按 `document_id` 拉取 chunk
+    - 批量生成 embedding
+    - 以 `chunk_id` 作为稳定 `embedding_ref`
+    - 写入 `Milvus`
+    - 将 embedding 元数据回写 PostgreSQL
+  - 当前文档重导入时，已在写入新向量前执行同文档旧向量删除
+  - 当前如果 embedding 或 `Milvus` 未配置，导入链路会显式输出：
+    - `vector_sync=skipped`
+    - `vector_reason=embedding_or_milvus_not_configured`
+- 验证结果：
+  - `python3 -m pytest tests/test_embedding_service.py tests/test_vector_index_service.py tests/test_llm_provider.py tests/test_llm_service.py tests/test_retrieval_service.py tests/test_retrieval_projection.py tests/test_cli.py tests/test_llm_models.py` 通过
+  - 当前共 `53` 个测试，全部通过
+  - 当前已完成代码级最小验证：
+    - embedding provider 请求与响应解析
+    - embedding service 组装请求
+    - 向量索引 service 的输入拼接、Milvus 写入与 PostgreSQL 元数据回写
+- 遗留问题：
+  - 当前尚未完成 `vector_only` 检索路径
+  - 当前尚未完成本地端到端向量验收脚本
+  - 当前未完成真实本地联调：
+    - 本地 `Milvus` 在本次环境探测中未连通
+    - 本次沙箱内 PostgreSQL TCP 直连也未放通
+- 下一步：
+  - 进入模块 07 任务 05：实现 `vector_only` 检索仓储与候选映射
+
+#### 记录 051：完成模块 07 任务 01，向量检索设计对接与当前代码差异修正
+
+- 状态：已完成
+- 范围：完成模块 07 中“任务 01：向量检索设计对接与当前代码差异修正”
+- 结果：
+  - 已对照 `Step 8.1 / 8.2 / 8.3 / 8.5 / 8.6` 与当前代码结构完成第一轮差异梳理
+  - 已确认当前实现与模块 07 目标一致的基础部分：
+    - 检索主对象仍统一为 `chunk`
+    - 当前已存在统一检索输入：
+      - `RetrievalQuery`
+      - `RetrievalFilters`
+    - 当前已存在统一检索输出：
+      - `ChunkHit`
+      - `RetrievalResult`
+    - 当前已存在最小强过滤承接能力：
+      - `tags`
+      - `source_types`
+      - `document_scope`
+      - `time_range`
+    - 当前 `time_range` 第一阶段语义已正式收敛为：
+      - `documents.imported_at`
+    - 当前 `RetrievalService` 与 PostgreSQL 检索仓储已提供后续接入 `vector_only` 的稳定外壳
+  - 已确认当前实现与 `Step 8` 存在的主要差异：
+    - `RetrievalService` 当前仅支持：
+      - `bm25_only`
+    - 当前仓储层仅实现：
+      - PostgreSQL BM25 检索
+    - 当前不存在任何：
+      - `Milvus` 客户端
+      - `Milvus` 配置项
+      - `Milvus` collection / record schema
+      - 向量写入
+      - 向量删除或失效处理
+      - `vector_only` 查询路径
+    - 当前数据库 schema 中仅保留了：
+      - `chunks.embedding_ref`
+      - 但尚未保留：
+        - `embedding_provider`
+        - `embedding_model`
+        - `embedding_version`
+        - `embedding_dim`
+    - 当前导入落库链路只会写入 `chunks.embedding_ref = NULL`
+    - 当前系统尚无任何真实 embedding 生成入口：
+      - LLM 模块当前只暴露 `generate_text`
+      - 尚无独立 embedding service / provider 协议
+    - 当前尚未实现 `Step 8.3` 规定的 embedding 输入拼接：
+      - `document_title`
+      - `section_title`
+      - `chunk_text`
+    - 当前统一返回结构中的 `score_breakdown` 仍只承接：
+      - `bm25_score`
+  - 已正式确认模块 07 第一阶段应按以下边界继续推进：
+    - 任务 02 负责补 embedding 输入构造与版本字段承接
+    - 任务 03 负责补 `Milvus` 配置、客户端与 collection schema
+    - 任务 04 负责补向量写入、失效与重建承接
+    - 任务 05-06 再进入 `vector_only` 仓储与 service 接入
+  - 已明确当前不应在本模块任务 01 中提前并入：
+    - `hybrid`
+    - `RRF`
+    - rerank
+    - Step 09 编排
+- 代码对接结论：
+  - `src/mindwiki/application/retrieval_models.py` 已具备承接统一 `vector_only` 返回结构的基础，但仍需补充向量候选模型或统一映射来源
+  - `src/mindwiki/application/retrieval_service.py` 目前对非 `bm25_only` 会直接拒绝，后续需在保持兼容的前提下扩展 `vector_only`
+  - `src/mindwiki/infrastructure/retrieval_repository.py` 当前是 PostgreSQL 专用实现，后续需新增 `Milvus` 检索仓储而不是在现有 BM25 SQL 中混写
+  - `src/mindwiki/infrastructure/settings.py` 当前无任何 `Milvus` 环境配置项
+  - `scripts/init_local_db.sql` 与 `src/mindwiki/infrastructure/import_repository.py` 当前只承接 `embedding_ref` 占位，尚不足以支撑版本化向量链路
+- 遗留问题：
+  - `embedding` 生成是继续复用现有 LLM provider 体系扩展，还是建立独立最小 embedding provider 协议，仍需在任务 02-03 之间收敛
+  - `Milvus` 的本地连接参数、collection 命名和过滤字段集合仍需在任务 03 中正式确定
+  - 导入链路是否在模块 07 第一阶段就默认执行自动向量写入，仍需在任务 04 中进一步收口
+- 下一步：
+  - 进入模块 07 任务 02：补 embedding 输入构造与版本字段承接
+
+#### 记录 050：确定模块 07 为 `Milvus` 向量检索基础模块 MVP
+
+- 状态：进行中
+- 范围：在模块 06 已完成 `bm25_only` 基础召回、向量库选型已切换为 `Milvus` 的前提下，正式定义下一开发模块的目标、边界与任务拆解
+- 结果：
+  - 已确认模块 07 的核心目标是：
+    - 先补齐 `embedding + Milvus + vector_only` 的最小闭环
+  - 已确认模块 07 当前阶段不直接进入：
+    - `hybrid` 融合排序
+    - `RRF` / 多路融合公式
+    - LLM rerank
+    - query decomposition
+    - context builder
+    - Step 09 完整检索编排
+  - 已确认模块 07 主要覆盖范围：
+    - 对齐 `Step 8.1 / 8.2 / 8.3 / 8.5 / 8.6` 与当前代码结构
+    - 补 embedding 输入构造与版本字段承接
+    - 接入 `Milvus` 客户端与最小配置项
+    - 建立 `Milvus` collection / record schema 与写入删除能力
+    - 实现 `vector_only` 最小召回链路
+    - 补本地验收脚本与 README 说明
+  - 已确认模块 07 的实现主对象仍统一为：
+    - `chunk`
+  - 已确认模块 07 的第一阶段返回目标仍保持与模块 06 一致：
+    - 继续复用统一 `chunk hit` 协议
+    - 在已有 `score_breakdown` 上补 `vector_score`
+- 模块目标：
+  - 让系统第一次具备真实的语义向量写入与向量召回能力
+  - 保持与现有 `RetrievalService`、过滤条件和 `chunk hit` 返回结构兼容
+  - 为后续 `hybrid` 与 Step 09 编排层提供稳定向量通道
+- 分步任务拆解：
+  - 任务 01：向量检索设计对接与当前代码差异修正
+    - 对照 `Step 8.1 / 8.2 / 8.3 / 8.5 / 8.6` 与当前代码完成第一轮差异梳理
+    - 明确 embedding 输入来源、版本字段落点、Milvus 写入边界和 `vector_only` 返回目标
+    - 明确哪些能力进入模块 07，哪些继续留到后续 `hybrid / Step 09`
+  - 任务 02：补 embedding 输入构造与版本字段承接
+    - 建立统一 embedding 输入构造函数
+    - 第一阶段按 `document_title + section_title + chunk_text` 承接输入拼接
+    - 在本地数据结构中补齐 `embedding_provider / embedding_model / embedding_version / embedding_dim / embedding_ref`
+  - 任务 03：接入 `Milvus` 配置、客户端与 collection schema
+    - 增加本地配置项与环境变量约定
+    - 封装 `Milvus` 客户端创建逻辑
+    - 明确 collection 名称、主键字段、vector 字段和标量过滤字段
+  - 任务 04：实现 chunk 向量写入、失效与重建承接
+    - 基于现有 chunk 数据生成向量写入 payload
+    - 支持单文档重建时的旧向量失效或删除
+    - 为后续导入链路自动写入预留稳定入口
+  - 任务 05：实现 `vector_only` 检索仓储与候选映射
+    - 建立 `Milvus` 查询仓储
+    - 承接 `tags / source_types / time_range / document_scope` 的前置过滤
+    - 将向量检索结果映射到统一候选结构，并补 `vector_score`
+  - 任务 06：扩展统一检索 service，接入 `vector_only`
+    - 在 `RetrievalService` 中接入 `vector_only`
+    - 保持与现有 `bm25_only` 行为兼容
+    - 为后续 `hybrid` 预留稳定 service 入口
+  - 任务 07：补本地验收脚本、README 与运行说明
+    - 增加 `Milvus` 本地验收脚本
+    - 补环境配置、启动方式和验证命令
+    - 在 README 中明确当前只完成 `vector_only`，尚未进入 `hybrid`
+- 当前建议执行顺序：
+  - 先完成设计与当前实现差异对接
+  - 再补 embedding 输入与版本字段
+  - 然后接 `Milvus` 客户端与写入链路
+  - 最后打通 `vector_only` 检索与本地验收
+- 当前边界判断：
+  - 模块 06 已解决 `bm25_only` 与强过滤基础，不需要在模块 07 重复实现
+  - `hybrid` 依赖向量召回先稳定落地，因此不应与模块 07 同步并入
+  - Step 09 的编排能力依赖 `bm25_only + vector_only` 两条通道先稳定存在，因此也不应提前进入
+- 遗留问题：
+  - 当前项目仍未接入任何真实 embedding 生成链路用于检索
+  - 当前项目仍未声明 `Milvus` 本地连接配置、collection 命名和验收命令
+  - 模块 07 是否一次承接导入链路中的自动向量写入，需在任务 04 讨论时进一步收敛
+- 下一步：
+  - 开始模块 07 任务 01：向量检索设计对接与当前代码差异修正
+
 #### 记录 049：确认向量库选型切换为 `Milvus`
 
 - 状态：进行中

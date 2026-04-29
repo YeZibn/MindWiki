@@ -43,6 +43,13 @@ class Settings:
     llm_model_id: str = ""
     llm_model_mini_id: str = ""
     llm_timeout_ms: int = 30000
+    llm_embedding_base_url: str = ""
+    llm_embedding_api_key: str = ""
+    llm_embedding_model_id: str = ""
+    llm_embedding_timeout_ms: int = 30000
+    milvus_uri: str = ""
+    milvus_token: str = ""
+    milvus_collection_name: str = "mindwiki_chunks"
 
 
 def _get_int_env(name: str, default: int) -> int:
@@ -66,6 +73,13 @@ def get_settings() -> Settings:
         llm_model_id=os.getenv("LLM_MODEL_ID", ""),
         llm_model_mini_id=os.getenv("LLM_MODEL_MINI_ID", ""),
         llm_timeout_ms=_get_int_env("LLM_TIMEOUT_MS", 30000),
+        llm_embedding_base_url=os.getenv("LLM_EMBEDDING_BASE_URL", ""),
+        llm_embedding_api_key=os.getenv("LLM_EMBEDDING_API_KEY", ""),
+        llm_embedding_model_id=os.getenv("LLM_EMBEDDING_MODEL_ID", ""),
+        llm_embedding_timeout_ms=_get_int_env("LLM_EMBEDDING_TIMEOUT_MS", 30000),
+        milvus_uri=os.getenv("SYSTEM_MEMORY_MILVUS_URI", os.getenv("MILVUS_URI", "")),
+        milvus_token=os.getenv("SYSTEM_MEMORY_MILVUS_TOKEN", os.getenv("MILVUS_TOKEN", "")),
+        milvus_collection_name=os.getenv("MILVUS_COLLECTION_NAME", "mindwiki_chunks"),
     )
 
 

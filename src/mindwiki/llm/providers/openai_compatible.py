@@ -17,6 +17,7 @@ from mindwiki.llm.models import (
     ValidationIssue,
     ValidationResult,
 )
+from mindwiki.llm.embedding_models import EmbeddingRequest, EmbeddingResponse, EmbeddingVector
 
 
 class UrlopenCallable(Protocol):
@@ -226,3 +227,79 @@ class OpenAICompatibleProvider:
     @staticmethod
     def _latency_ms(started_at: float) -> int:
         return int((time.monotonic() - started_at) * 1000)
+
+
+class OpenAICompatibleEmbeddingProvider:
+    """Adapter for OpenAI-compatible `/embeddings` endpoints."""
+
+    def __init__(
+        self,
+        config: OpenAICompatibleConfig,
+        *,
+        urlopen: UrlopenCallable | None = None,
+    ) -> None:
+        self._config = config
+        self._urlopen = urlopen if urlopen is not None else request.urlopen
+
+    def build_payload(self, embedding_request: EmbeddingRequest) -> dict[str, Any]:
+        model = embedding_request.model or self._config.default_model
+        return {
+            "model": model,
+            "input": list(embedding_request.texts),
+            "encoding_format": "float",
+        }
+
+    def embed(self, embedding_request: EmbeddingRequest) -> EmbeddingResponse:
+        payload = self.build_payload(embedding_request)
+        body = json.dumps(payload).encode("utf-8")
+        endpoint = self._build_endpoint()
+        http_request = request.Request(
+            endpoint,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self._config.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        with self._urlopen(http_request, timeout=embedding_request.timeout_ms / 1000) as response:
+            raw_response = json.loads(response.read().decode("utf-8"))
+
+        data = raw_response.get("data")
+        if not isinstance(data, list) or not data:
+            raise RuntimeError("Embedding provider response does not include data.")
+
+        vectors: list[EmbeddingVector] = []
+        for item in data:
+            if not isinstance(item, dict):
+                raise RuntimeError("Embedding provider returned an invalid item.")
+            vector = item.get("embedding")
+            if not isinstance(vector, list) or not vector:
+                raise RuntimeError("Embedding provider returned an empty embedding vector.")
+            index = int(item.get("index", len(vectors)))
+            vectors.append(
+                EmbeddingVector(
+                    index=index,
+                    vector=tuple(float(value) for value in vector),
+                )
+            )
+
+        vectors.sort(key=lambda item: item.index)
+        usage = raw_response.get("usage", {})
+        normalized_usage: dict[str, int] = {}
+        for key in ("prompt_tokens", "total_tokens"):
+            value = usage.get(key)
+            if isinstance(value, int):
+                normalized_usage[key] = value
+
+        return EmbeddingResponse(
+            model=str(raw_response.get("model") or embedding_request.model),
+            vectors=tuple(vectors),
+            provider="openai_compatible",
+            usage=normalized_usage,
+        )
+
+    def _build_endpoint(self) -> str:
+        base_url = self._config.base_url.rstrip("/")
+        return f"{base_url}/embeddings"

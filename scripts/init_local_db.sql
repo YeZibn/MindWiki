@@ -82,10 +82,21 @@ CREATE TABLE IF NOT EXISTS chunks (
     end_offset INTEGER,
     page_number INTEGER,
     embedding_ref TEXT,
+    embedding_provider TEXT,
+    embedding_model TEXT,
+    embedding_version TEXT,
+    embedding_dim INTEGER,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP
 );
+
+ALTER TABLE chunks
+    ADD COLUMN IF NOT EXISTS embedding_ref TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_provider TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_model TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_version TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_dim INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_sources_source_type
     ON sources (source_type);

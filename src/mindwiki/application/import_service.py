@@ -17,6 +17,7 @@ from mindwiki.infrastructure.import_repository import (
     ImportRepository,
     build_import_repository,
 )
+from mindwiki.application.vector_index_service import VectorIndexService, build_vector_index_service
 
 
 SUPPORTED_FILE_TYPES = {".md", ".pdf"}
@@ -53,8 +54,15 @@ class DirectoryExecutionSummary:
 class ImportService:
     """Coordinates CLI-facing import requests."""
 
-    def __init__(self, repository: ImportRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: ImportRepository | None = None,
+        vector_index_service: VectorIndexService | None = None,
+    ) -> None:
         self._repository = repository if repository is not None else build_import_repository()
+        self._vector_index_service = (
+            vector_index_service if vector_index_service is not None else build_vector_index_service()
+        )
 
     def import_file(self, request: ImportFileRequest) -> CommandResult:
         path = request.path.expanduser().resolve()
@@ -178,6 +186,38 @@ class ImportService:
                     ),
                 )
             else:
+                vector_sync_details: list[str] = []
+                if self._vector_index_service is not None:
+                    try:
+                        vector_result = self._vector_index_service.index_document(persisted.document_id)
+                    except Exception as exc:
+                        if active_import_job_id is not None:
+                            self._safe_mark_failed(active_import_job_id, exc)
+                        return CommandResult(
+                            exit_code=1,
+                            message=(
+                                "Single-file import failed. "
+                                f"path={path} type={suffix} "
+                                f"reason=vector_index_error:{exc.__class__.__name__} "
+                                f"import_job_id={active_import_job_id}"
+                            ),
+                        )
+                    else:
+                        vector_sync_details.extend(
+                            [
+                                "vector_sync=stored",
+                                f"embedding_model={vector_result.embedding_model}",
+                                f"embedding_dim={vector_result.embedding_dim}",
+                                f"vector_collection={vector_result.collection_name}",
+                            ]
+                        )
+                else:
+                    vector_sync_details.extend(
+                        [
+                            "vector_sync=skipped",
+                            "vector_reason=embedding_or_milvus_not_configured",
+                        ]
+                    )
                 details.extend(
                     [
                         "persistence=stored",
@@ -187,6 +227,7 @@ class ImportService:
                         f"chunks={persisted.chunk_count}",
                     ]
                 )
+                details.extend(vector_sync_details)
         else:
             details.append("persistence=skipped")
             details.append("reason=database_url_missing")
@@ -279,6 +320,38 @@ class ImportService:
                     ),
                 )
             else:
+                vector_sync_details: list[str] = []
+                if self._vector_index_service is not None:
+                    try:
+                        vector_result = self._vector_index_service.index_document(persisted.document_id)
+                    except Exception as exc:
+                        if active_import_job_id is not None:
+                            self._safe_mark_failed(active_import_job_id, exc)
+                        return CommandResult(
+                            exit_code=1,
+                            message=(
+                                "Single-file import failed. "
+                                f"path={path} type={suffix} "
+                                f"reason=vector_index_error:{exc.__class__.__name__} "
+                                f"import_job_id={active_import_job_id}"
+                            ),
+                        )
+                    else:
+                        vector_sync_details.extend(
+                            [
+                                "vector_sync=stored",
+                                f"embedding_model={vector_result.embedding_model}",
+                                f"embedding_dim={vector_result.embedding_dim}",
+                                f"vector_collection={vector_result.collection_name}",
+                            ]
+                        )
+                else:
+                    vector_sync_details.extend(
+                        [
+                            "vector_sync=skipped",
+                            "vector_reason=embedding_or_milvus_not_configured",
+                        ]
+                    )
                 details.extend(
                     [
                         "persistence=stored",
@@ -288,6 +361,7 @@ class ImportService:
                         f"chunks={persisted.chunk_count}",
                     ]
                 )
+                details.extend(vector_sync_details)
         else:
             details.append("parsing=completed")
             details.append("persistence=skipped")

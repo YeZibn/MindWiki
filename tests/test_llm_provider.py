@@ -5,8 +5,10 @@ import json
 from urllib import error
 
 from mindwiki.llm.models import LLMMessage, LLMRequest, RetryPolicy
+from mindwiki.llm.embedding_models import EmbeddingRequest
 from mindwiki.llm.providers.openai_compatible import (
     OpenAICompatibleConfig,
+    OpenAICompatibleEmbeddingProvider,
     OpenAICompatibleProvider,
 )
 
@@ -163,3 +165,43 @@ def test_openai_compatible_provider_maps_network_error() -> None:
     assert response.error is not None
     assert response.error.error_type == "network_error"
     assert response.error.retryable is True
+
+
+def test_openai_compatible_embedding_provider_builds_payload_and_parses_response() -> None:
+    def fake_urlopen(req, timeout):
+        assert req.full_url == "https://api.siliconflow.cn/v1/embeddings"
+        assert timeout == 8.0
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "Qwen/Qwen3-Embedding-8B"
+        assert payload["input"] == ["A", "B"]
+        return FakeHTTPResponse(
+            {
+                "model": "Qwen/Qwen3-Embedding-8B",
+                "data": [
+                    {"index": 0, "embedding": [0.1, 0.2]},
+                    {"index": 1, "embedding": [0.3, 0.4]},
+                ],
+                "usage": {"prompt_tokens": 12, "total_tokens": 12},
+            }
+        )
+
+    provider = OpenAICompatibleEmbeddingProvider(
+        OpenAICompatibleConfig(
+            base_url="https://api.siliconflow.cn/v1",
+            api_key="embed-key",
+        ),
+        urlopen=fake_urlopen,
+    )
+
+    response = provider.embed(
+        EmbeddingRequest(
+            model="Qwen/Qwen3-Embedding-8B",
+            texts=("A", "B"),
+            timeout_ms=8000,
+        )
+    )
+
+    assert response.provider == "openai_compatible"
+    assert response.model == "Qwen/Qwen3-Embedding-8B"
+    assert response.usage["total_tokens"] == 12
+    assert response.vectors[0].vector == (0.1, 0.2)
