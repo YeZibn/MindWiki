@@ -132,7 +132,7 @@ class RetrievalService:
             location=projection.location,
             score=float(candidate.final_score or 0.0),
             match_sources=candidate.match_sources,
-            score_breakdown={"final_score": float(candidate.final_score or 0.0)},
+            score_breakdown=_build_hybrid_score_breakdown(candidate),
         )
 
 
@@ -375,3 +375,24 @@ def _merge_match_sources(
         if value not in merged:
             merged.append(value)
     return tuple(merged)
+
+
+def _build_hybrid_score_breakdown(candidate: HybridCandidate) -> dict[str, float]:
+    breakdown: dict[str, float] = {}
+    if candidate.vector_score is not None:
+        breakdown["vector_score"] = candidate.vector_score
+    if candidate.bm25_score is not None:
+        breakdown["bm25_score"] = candidate.bm25_score
+    if candidate.rrf_score is not None:
+        breakdown["rrf_score"] = candidate.rrf_score
+    if candidate.normalized_rrf_score is not None:
+        breakdown["normalized_rrf_score"] = candidate.normalized_rrf_score
+    if candidate.normalized_vector_score is not None:
+        breakdown["normalized_vector_score"] = candidate.normalized_vector_score
+    if candidate.normalized_bm25_score is not None:
+        breakdown["normalized_bm25_score"] = candidate.normalized_bm25_score
+    if candidate.dual_hit_bonus is not None:
+        breakdown["dual_hit_bonus"] = candidate.dual_hit_bonus
+    if candidate.final_score is not None:
+        breakdown["final_score"] = candidate.final_score
+    return breakdown

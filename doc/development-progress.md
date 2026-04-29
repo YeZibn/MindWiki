@@ -17,6 +17,84 @@
 
 ### 2026-04-29
 
+#### 记录 061：完成模块 08 任务 06，补本地 `hybrid` 验收脚本、README 与运行说明
+
+- 状态：已完成
+- 范围：完成模块 08 中“任务 06：补本地 `hybrid` 验收脚本、README 与运行说明”
+- 结果：
+  - 已新增 `scripts/verify_local_hybrid_retrieval.py`
+  - 已为 `hybrid` 模块补充第一版本地验收脚本能力：
+    - 导入一份带标签的 Markdown 样例
+    - 依赖导入时自动完成 embedding 生成与 `Milvus` 写入
+    - 执行一轮宽范围 `hybrid` 检索
+    - 执行一轮带 `tags / source_types / document_scope / time_range` 的过滤检索
+    - 校验导入文档可以在两类混合查询下被命中
+    - 校验返回中包含：
+      - `vector_score`
+      - `bm25_score`
+      - `rrf_score`
+      - `final_score`
+  - 已更新 `README.md`，补充：
+    - `hybrid` 当前能力边界
+    - 最小 `hybrid` 调用示例
+    - 混合检索本地验收命令
+  - 已更新 `scripts/README.md`，补充 `verify_local_hybrid_retrieval.py` 的脚本说明
+  - 当前模块 08 已具备从 `bm25_only / vector_only` 到 `hybrid` 融合召回与本地验收脚本的最小闭环
+- 验证结果：
+  - `python3 -m py_compile scripts/verify_local_hybrid_retrieval.py` 通过
+  - 已完成一次真实本地 `hybrid` 验收脚本执行
+  - 当前真实返回已覆盖：
+    - `vector_score`
+    - `bm25_score`
+    - `rrf_score`
+    - `final_score`
+- 遗留问题：
+  - 当前尚未进入 rerank
+  - 当前尚未进入 Step 09 编排层
+  - 当前 `hybrid` 本地验收脚本仍依赖真实 embedding 网关与真实 `Milvus`
+- 下一步：
+  - 模块 08 已完成，可进入下一开发模块讨论
+
+#### 记录 060：完成模块 08 任务 05，补 `score_breakdown` 与排序打平规则
+
+- 状态：已完成
+- 范围：完成模块 08 中“任务 05：补 `score_breakdown` 与排序打平规则”
+- 结果：
+  - 已扩展 `src/mindwiki/application/retrieval_service.py`
+  - 当前 `hybrid` 返回中的 `score_breakdown` 已正式补齐第一阶段核心字段：
+    - `vector_score`
+    - `bm25_score`
+    - `rrf_score`
+    - `normalized_rrf_score`
+    - `normalized_vector_score`
+    - `normalized_bm25_score`
+    - `dual_hit_bonus`
+    - `final_score`
+  - 当前 `ChunkHit.score` 在 `hybrid` 模式下仍保持：
+    - `score = final_score`
+  - 已将第一阶段排序打平规则明确固化到测试中：
+    - 先按 `final_score`
+    - 再按：
+      - `dual_hit_bonus`
+      - `normalized_rrf_score`
+      - `normalized_vector_score`
+      - `normalized_bm25_score`
+  - 当前 `hybrid` 的返回结构已更接近 `Step 8.7 / 8.8` 的验证需求：
+    - 可直接观察两路原始分数
+    - 可直接观察融合分数与双命中奖励
+    - 可直接辅助后续本地调试与人工判断
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_retrieval_projection.py tests/test_embedding_service.py tests/test_vector_index_service.py tests/test_llm_provider.py tests/test_llm_service.py tests/test_cli.py tests/test_llm_models.py` 通过
+  - 当前共 `60` 个测试，全部通过
+  - 已新增测试覆盖：
+    - `hybrid` 返回完整 `score_breakdown`
+    - 排序打平规则按设计稿顺序生效
+- 遗留问题：
+  - 当前还没有真实本地 `hybrid` 端到端联调
+  - 当前还没有固定的 `hybrid` 本地验收脚本和 README 运行命令
+- 下一步：
+  - 进入模块 08 任务 06：补本地 `hybrid` 验收脚本、README 与运行说明
+
 #### 记录 059：完成模块 08 任务 04，扩展统一检索 service，接入 `hybrid`
 
 - 状态：已完成

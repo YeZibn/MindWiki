@@ -84,8 +84,8 @@ Current limitation:
 - embedding integration currently supports only chunk-level vector generation for import-time indexing
 - structured output handling currently supports minimal local JSON parsing and lightweight schema checks
 - citation validation and repair retries are not implemented yet
-- retrieval currently supports `bm25_only` and `vector_only`
-- hybrid recall and fusion are not implemented yet
+- retrieval currently supports `bm25_only`, `vector_only`, and `hybrid`
+- rerank and Step 09 orchestration are not implemented yet
 
 ## LLM Setup
 
@@ -152,7 +152,7 @@ print(response.output_text)
 
 ## Retrieval Setup
 
-The project now supports first-stage `bm25_only` and `vector_only` retrieval paths.
+The project now supports first-stage `bm25_only`, `vector_only`, and `hybrid` retrieval paths.
 
 Current retrieval behavior:
 
@@ -160,6 +160,7 @@ Current retrieval behavior:
 - supported retrieval modes are currently:
   - `bm25_only`
   - `vector_only`
+  - `hybrid`
 - vector storage is now written during import when embedding and `Milvus` settings are configured
 - strong filters currently support:
   - `source_types`
@@ -175,6 +176,18 @@ Current retrieval behavior:
 - `vector_only` currently returns:
   - `match_sources = ("vector",)`
   - `score_breakdown = {"vector_score": ...}`
+- `hybrid` currently returns:
+  - merged `match_sources`
+  - `score = final_score`
+  - `score_breakdown` including:
+    - `vector_score`
+    - `bm25_score`
+    - `rrf_score`
+    - `normalized_rrf_score`
+    - `normalized_vector_score`
+    - `normalized_bm25_score`
+    - `dual_hit_bonus`
+    - `final_score`
 
 Minimal retrieval example:
 
@@ -206,6 +219,25 @@ result = service.retrieve(
         query="embedding generation and vector sync verification",
         top_k=3,
         retrieval_mode="vector_only",
+    )
+)
+
+for hit in result.hits:
+    print(hit.document_title, hit.score, hit.score_breakdown)
+```
+
+Minimal hybrid retrieval example:
+
+```python
+from mindwiki.application.retrieval_models import RetrievalQuery
+from mindwiki.application.retrieval_service import RetrievalService
+
+service = RetrievalService()
+result = service.retrieve(
+    RetrievalQuery(
+        query="exact keyword recall and semantic recall fusion",
+        top_k=3,
+        retrieval_mode="hybrid",
     )
 )
 
@@ -257,6 +289,7 @@ PYTHONPATH=src python3 scripts/verify_local_directory_import.py
 PYTHONPATH=src python3 scripts/verify_local_llm.py
 PYTHONPATH=src python3 scripts/verify_local_retrieval.py
 PYTHONPATH=src python3 scripts/verify_local_vector_retrieval.py
+PYTHONPATH=src python3 scripts/verify_local_hybrid_retrieval.py
 ```
 
 The verification script will:
@@ -300,6 +333,19 @@ The vector retrieval verification script will:
 - verify that the imported document can be retrieved under both query shapes
 - verify that `match_sources = ("vector",)` and `score_breakdown` includes `vector_score`
 - print a JSON summary including top hit and vector score details
+
+The hybrid retrieval verification script will:
+
+- import one tagged Markdown sample with import-time embedding generation enabled
+- run one broad `hybrid` retrieval query
+- run one filtered `hybrid` retrieval query with `tags`, `source_types`, `document_scope`, and `time_range`
+- verify that the imported document can be retrieved under both query shapes
+- verify that `score_breakdown` includes:
+  - `vector_score`
+  - `bm25_score`
+  - `rrf_score`
+  - `final_score`
+- print a JSON summary including top hit, merged `match_sources`, and fusion score details
 
 Current status conventions:
 

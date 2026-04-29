@@ -12,3 +12,4 @@ Current scope:
 - `verify_local_llm.py`: run a minimal end-to-end `generate_text` verification against the configured OpenAI-compatible LLM gateway
 - `verify_local_retrieval.py`: run a minimal end-to-end `bm25_only` retrieval verification against the local PostgreSQL database
 - `verify_local_vector_retrieval.py`: run a minimal end-to-end `vector_only` retrieval verification against the local PostgreSQL and Milvus setup
+- `verify_local_hybrid_retrieval.py`: run a minimal end-to-end `hybrid` retrieval verification against the local PostgreSQL, embedding gateway, and Milvus setup

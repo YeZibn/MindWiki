@@ -171,6 +171,13 @@ def test_retrieve_hybrid_merges_two_channels_and_returns_final_score() -> None:
     assert hit.chunk_id == bm25_candidate.projection.chunk_id
     assert hit.score > 0
     assert hit.match_sources == ("vector", "section_title", "chunk_text")
+    assert "vector_score" in hit.score_breakdown
+    assert "bm25_score" in hit.score_breakdown
+    assert "rrf_score" in hit.score_breakdown
+    assert "normalized_rrf_score" in hit.score_breakdown
+    assert "normalized_vector_score" in hit.score_breakdown
+    assert "normalized_bm25_score" in hit.score_breakdown
+    assert "dual_hit_bonus" in hit.score_breakdown
     assert "final_score" in hit.score_breakdown
     assert repository.calls == [
         ("bm25_only", "hybrid retrieval", RetrievalFilters(), 3),
@@ -412,3 +419,66 @@ def test_score_hybrid_candidates_uses_one_when_all_values_in_a_column_are_equal(
 
     assert scored[0].normalized_vector_score == 1.0
     assert scored[1].normalized_vector_score == 1.0
+
+
+def test_score_hybrid_candidates_uses_tie_break_order_after_equal_final_score() -> None:
+    first_projection = build_candidate().projection
+    second_projection = ChunkProjection(
+        chunk_id=UUID("00000000-0000-0000-0000-000000000051"),
+        document_id=UUID("00000000-0000-0000-0000-000000000052"),
+        section_id=UUID("00000000-0000-0000-0000-000000000053"),
+        document_title="Another Note",
+        section_title="Another Section",
+        chunk_text="Another chunk text.",
+        source_type="markdown",
+        document_type="markdown",
+        document_tags=(),
+        location=ChunkLocation(
+            chunk_index=4,
+            section_id=UUID("00000000-0000-0000-0000-000000000053"),
+            page_number=None,
+            imported_at=datetime(2026, 4, 29, 13, 0, 0),
+        ),
+    )
+
+    candidates = (
+        HybridCandidate(
+            chunk_id=first_projection.chunk_id,
+            projection=first_projection,
+            vector_hit=True,
+            bm25_hit=True,
+            vector_score=0.8,
+            bm25_score=0.8,
+            rank_vector=1,
+            rank_bm25=2,
+            match_sources=("vector", "chunk_text"),
+            rrf_score=0.03,
+            normalized_rrf_score=0.7,
+            normalized_vector_score=0.5,
+            normalized_bm25_score=0.5,
+            dual_hit_bonus=1.0,
+            final_score=0.75,
+        ),
+        HybridCandidate(
+            chunk_id=second_projection.chunk_id,
+            projection=second_projection,
+            vector_hit=True,
+            bm25_hit=False,
+            vector_score=0.9,
+            bm25_score=None,
+            rank_vector=1,
+            rank_bm25=None,
+            match_sources=("vector",),
+            rrf_score=0.02,
+            normalized_rrf_score=0.9,
+            normalized_vector_score=0.9,
+            normalized_bm25_score=0.0,
+            dual_hit_bonus=0.0,
+            final_score=0.75,
+        ),
+    )
+
+    scored = score_hybrid_candidates(candidates)
+
+    assert scored[0].chunk_id == first_projection.chunk_id
+    assert scored[1].chunk_id == second_projection.chunk_id
