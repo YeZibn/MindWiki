@@ -17,6 +17,68 @@
 
 ### 2026-04-29
 
+#### 记录 049：确认向量库选型切换为 `Milvus`
+
+- 状态：进行中
+- 范围：根据当前本地环境与最新决策，修正设计稿和后续模块 07 的向量存储选型
+- 结果：
+  - 已确认当前向量库选型由 `Qdrant` 调整为 `Milvus`
+  - 已同步修正 `Step 4` 存储与索引设计中的向量库表述
+  - 已同步修正 `Step 5` 导入错误分类、重试说明与导入流程文案中的向量索引表述
+  - 已同步修正路线图中的向量存储方案说明
+  - 已明确模块 07 后续应围绕 `Milvus` 落地：
+    - embedding 元数据与版本字段
+    - `Milvus` collection / record 结构
+    - 向量写入、删除与重建
+    - `vector_only` 最小召回链路
+- 说明：
+  - `记录 048` 反映的是切换前基于既有设计稿的核对结果
+  - 当前正式有效的后续实现方向，以本记录中的 `Milvus` 选型为准
+- 遗留问题：
+  - 当前项目里仍未接入 `Milvus` 客户端、配置项与本地验收脚本
+  - 现有模块 07 任务拆分仍需按 `Milvus` 版本重新细化
+- 下一步：
+  - 基于 `Milvus` 重新定义模块 07，并先落第一个向量基础设施子任务
+
+#### 记录 048：修正模块 07 方向，向量基础设施以 `Qdrant` 为准
+
+- 状态：进行中
+- 范围：核对既有设计稿中向量存储选型，并修正后续开发模块的承接方向
+- 结果：
+  - 已重新核对 `Step 4` 与 `Step 8` 设计稿
+  - 已确认当前设计稿中的向量数据库正式选型为：
+    - `Qdrant`
+  - 已确认以下设计结论已经明确写入文档：
+    - `PostgreSQL` 作为主数据源
+    - `Qdrant` 承担 `Chunk` 级语义检索向量索引
+    - `BM25` 承担关键词全文检索
+    - 向量索引主对象为 `chunk`
+    - 向量检索相关版本字段包括：
+      - `embedding_provider`
+      - `embedding_model`
+      - `embedding_version`
+      - `embedding_dim`
+  - 已确认模块 06 仅完成 `bm25_only` 基础召回，尚未实现：
+    - embedding 生成
+    - `Qdrant` 写入
+    - `vector_only`
+    - `hybrid`
+  - 基于设计稿与当前实现差异，后续模块 07 应优先承接：
+    - embedding 输入与版本字段落地
+    - `Qdrant` collection / point / payload 结构落地
+    - 向量写入与删除同步
+    - `vector_only` 最小召回链路
+  - 模块 07 暂不应直接定义为 `Step 9` 编排层
+- 设计依据：
+  - `doc/design/step-04-storage-design/04.01-storage-layer-mapping.md`
+  - `doc/design/step-04-storage-design/04.03-index-and-incremental-update-strategy.md`
+  - `doc/design/step-08-index-and-retrieval/08.02-embedding-generation-and-versioning-strategy.md`
+- 遗留问题：
+  - 当前项目中尚未接入 `Qdrant` 客户端与本地验收链路
+  - 模块 07 仍需进一步拆成可逐步交付的子任务
+- 下一步：
+  - 基于 `Qdrant` 重新定义模块 07 的任务拆分，并先从向量基础设施开始
+
 #### 记录 047：完成模块 06 任务 07，补本地验收脚本与 README 说明
 
 - 状态：已完成
