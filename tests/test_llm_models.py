@@ -14,6 +14,7 @@ from mindwiki.llm.models import (
     ValidationIssue,
     ValidationResult,
 )
+from mindwiki.llm.rerank_models import RerankDocument, RerankRequest, RerankResponse, RerankResult
 from mindwiki.llm.providers.openai_compatible import OpenAICompatibleConfig
 
 
@@ -97,6 +98,10 @@ def test_settings_reads_llm_configuration_from_dotenv(tmp_path: Path, monkeypatc
             "LLM_MODEL_ID=gpt-5.4\n"
             "LLM_MODEL_MINI_ID=gpt-5.4-mini\n"
             "LLM_TIMEOUT_MS=45000\n"
+            "LLM_RERANK_BASE_URL=https://api.siliconflow.cn/v1\n"
+            "LLM_RERANK_API_KEY=rerank-key\n"
+            "LLM_RERANK_MODEL_ID=Qwen/Qwen3-Reranker-8B\n"
+            "LLM_RERANK_TIMEOUT_MS=15000\n"
         ),
         encoding="utf-8",
     )
@@ -108,6 +113,10 @@ def test_settings_reads_llm_configuration_from_dotenv(tmp_path: Path, monkeypatc
         "LLM_MODEL_ID",
         "LLM_MODEL_MINI_ID",
         "LLM_TIMEOUT_MS",
+        "LLM_RERANK_BASE_URL",
+        "LLM_RERANK_API_KEY",
+        "LLM_RERANK_MODEL_ID",
+        "LLM_RERANK_TIMEOUT_MS",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -122,6 +131,10 @@ def test_settings_reads_llm_configuration_from_dotenv(tmp_path: Path, monkeypatc
     assert settings.llm_model_id == "gpt-5.4"
     assert settings.llm_model_mini_id == "gpt-5.4-mini"
     assert settings.llm_timeout_ms == 45000
+    assert settings.llm_rerank_base_url == "https://api.siliconflow.cn/v1"
+    assert settings.llm_rerank_api_key == "rerank-key"
+    assert settings.llm_rerank_model_id == "Qwen/Qwen3-Reranker-8B"
+    assert settings.llm_rerank_timeout_ms == 15000
 
     settings_module.clear_settings_cache()
 
@@ -136,3 +149,31 @@ def test_openai_compatible_config_accepts_settings_values() -> None:
     assert config.base_url == "https://kuaipao.ai/v1"
     assert config.api_key == "test-key"
     assert config.default_model == "gpt-5.4"
+
+
+def test_rerank_request_and_response_keep_core_fields() -> None:
+    request = RerankRequest(
+        query="Step 8的职责？",
+        documents=(
+            RerankDocument(document_id="chunk_1", text="doc 1"),
+            RerankDocument(document_id="chunk_2", text="doc 2"),
+        ),
+        model="Qwen/Qwen3-Reranker-8B",
+        top_n=2,
+        timeout_ms=12000,
+        metadata={"request_id": "rerank_001"},
+    )
+    response = RerankResponse(
+        model="Qwen/Qwen3-Reranker-8B",
+        results=(
+            RerankResult(index=1, document_id="chunk_2", relevance_score=0.92),
+            RerankResult(index=0, document_id="chunk_1", relevance_score=0.71),
+        ),
+        usage={"total_tokens": 42},
+    )
+
+    assert request.query == "Step 8的职责？"
+    assert request.documents[0].document_id == "chunk_1"
+    assert request.top_n == 2
+    assert response.results[0].document_id == "chunk_2"
+    assert response.results[0].relevance_score == 0.92

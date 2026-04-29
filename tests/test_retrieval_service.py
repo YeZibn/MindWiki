@@ -15,17 +15,20 @@ from mindwiki.application.retrieval_models import (
     RetrievalFilters,
     RetrievalQuery,
     SubQueryCandidate,
+    SubQueryResult,
     VectorCandidate,
 )
 from mindwiki.application.query_decomposition_service import QueryDecompositionService
 from mindwiki.application.query_expansion_service import QueryExpansionService
 from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates, score_hybrid_candidates
+from mindwiki.application.subquery_rerank_service import SubQueryRerankService
 from mindwiki.application.subquery_retrieval_service import (
     SubQueryRetrievalService,
     merge_sub_query_candidates,
     score_sub_query_candidates,
 )
 from mindwiki.llm.models import LLMError, LLMResponse, LLMValidation, ResponseTiming
+from mindwiki.llm.rerank_models import RerankResponse, RerankResult
 
 
 class RecordingRetrievalRepository:
@@ -53,6 +56,16 @@ class RecordingLLMService:
         self.calls = []
 
     def generate_text(self, payload):
+        self.calls.append(payload)
+        return self._response
+
+
+class RecordingRerankService:
+    def __init__(self, response: RerankResponse) -> None:
+        self._response = response
+        self.calls = []
+
+    def rerank(self, payload):
         self.calls.append(payload)
         return self._response
 
@@ -349,6 +362,64 @@ def test_sub_query_retrieval_service_executes_four_routes_and_returns_independen
         ("vector_only", "chunk 质量治理的目的是什么？", RetrievalFilters(), 3),
         ("vector_only", "chunk 质量评分用于提升召回与上下文质量。", RetrievalFilters(), 3),
     ]
+
+
+def test_sub_query_rerank_service_reranks_candidates_and_keeps_top_five() -> None:
+    projection = build_candidate().projection
+    candidates = tuple(
+        SubQueryCandidate(
+            chunk_id=UUID(f"00000000-0000-0000-0000-00000000005{i}"),
+            projection=ChunkProjection(
+                chunk_id=UUID(f"00000000-0000-0000-0000-00000000005{i}"),
+                document_id=projection.document_id,
+                section_id=projection.section_id,
+                document_title=projection.document_title,
+                section_title=projection.section_title,
+                chunk_text=f"chunk text {i}",
+                source_type=projection.source_type,
+                document_type=projection.document_type,
+                document_tags=projection.document_tags,
+                location=projection.location,
+            ),
+            hit_sources=("base_vector",),
+            fused_rrf_score=0.01 * i,
+        )
+        for i in range(6)
+    )
+    rerank_service = RecordingRerankService(
+        RerankResponse(
+            model="Qwen/Qwen3-Reranker-8B",
+            results=(
+                RerankResult(index=5, document_id=str(candidates[5].chunk_id), relevance_score=0.98),
+                RerankResult(index=4, document_id=str(candidates[4].chunk_id), relevance_score=0.92),
+                RerankResult(index=3, document_id=str(candidates[3].chunk_id), relevance_score=0.88),
+                RerankResult(index=2, document_id=str(candidates[2].chunk_id), relevance_score=0.83),
+                RerankResult(index=1, document_id=str(candidates[1].chunk_id), relevance_score=0.79),
+            ),
+        )
+    )
+    service = SubQueryRerankService(rerank_service)
+
+    result = service.rerank_sub_query(
+        SubQueryResult(
+            sub_query_id="sq_1",
+            sub_query_text="Step 8的职责？",
+            base_query="Step 8的职责？",
+            step_back_query="Step 8在整体流程中的职责是什么？",
+            hyde_query="Step 8负责索引、召回和混合检索基础能力。",
+            candidates=candidates,
+        )
+    )
+
+    assert result.sub_query_id == "sq_1"
+    assert len(result.reranked_candidates) == 5
+    assert result.reranked_candidates[0].chunk_id == candidates[5].chunk_id
+    assert result.reranked_candidates[0].rerank_score == 0.98
+    assert "strong direct match" in result.reranked_candidates[0].rerank_reason
+    assert len(rerank_service.calls) == 1
+    payload = rerank_service.calls[0]
+    assert payload.query == "Step 8的职责？"
+    assert payload.top_n == 5
 
 
 def test_retrieve_passes_strong_filters_to_repository() -> None:

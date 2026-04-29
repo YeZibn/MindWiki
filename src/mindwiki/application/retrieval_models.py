@@ -88,6 +88,27 @@ class SubQueryResult:
 
 
 @dataclass(frozen=True, slots=True)
+class RerankedSubQueryCandidate:
+    """Reranked candidate inside one sub-query after step 9.4."""
+
+    chunk_id: UUID
+    projection: ChunkProjection
+    hit_sources: tuple[str, ...] = field(default_factory=tuple)
+    fused_rrf_score: float | None = None
+    rerank_score: float = 0.0
+    rerank_reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SubQueryRerankResult:
+    """Reranked candidate set for one sub-query in step 9.4."""
+
+    sub_query_id: str
+    sub_query_text: str
+    reranked_candidates: tuple[RerankedSubQueryCandidate, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""
 

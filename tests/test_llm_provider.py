@@ -6,10 +6,12 @@ from urllib import error
 
 from mindwiki.llm.models import LLMMessage, LLMRequest, RetryPolicy
 from mindwiki.llm.embedding_models import EmbeddingRequest
+from mindwiki.llm.rerank_models import RerankDocument, RerankRequest
 from mindwiki.llm.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleEmbeddingProvider,
     OpenAICompatibleProvider,
+    OpenAICompatibleRerankProvider,
 )
 
 
@@ -205,3 +207,51 @@ def test_openai_compatible_embedding_provider_builds_payload_and_parses_response
     assert response.model == "Qwen/Qwen3-Embedding-8B"
     assert response.usage["total_tokens"] == 12
     assert response.vectors[0].vector == (0.1, 0.2)
+
+
+def test_openai_compatible_rerank_provider_builds_payload_and_parses_response() -> None:
+    def fake_urlopen(req, timeout):
+        assert req.full_url == "https://api.siliconflow.cn/v1/rerank"
+        assert timeout == 15.0
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "Qwen/Qwen3-Reranker-8B"
+        assert payload["query"] == "Step 8的职责？"
+        assert payload["documents"] == ["doc 1", "doc 2"]
+        assert payload["top_n"] == 2
+        return FakeHTTPResponse(
+            {
+                "model": "Qwen/Qwen3-Reranker-8B",
+                "results": [
+                    {"index": 1, "relevance_score": 0.91},
+                    {"index": 0, "relevance_score": 0.72},
+                ],
+                "usage": {"total_tokens": 21},
+            }
+        )
+
+    provider = OpenAICompatibleRerankProvider(
+        OpenAICompatibleConfig(
+            base_url="https://api.siliconflow.cn/v1",
+            api_key="rerank-key",
+        ),
+        urlopen=fake_urlopen,
+    )
+
+    response = provider.rerank(
+        RerankRequest(
+            query="Step 8的职责？",
+            documents=(
+                RerankDocument(document_id="chunk_1", text="doc 1"),
+                RerankDocument(document_id="chunk_2", text="doc 2"),
+            ),
+            model="Qwen/Qwen3-Reranker-8B",
+            top_n=2,
+            timeout_ms=15000,
+        )
+    )
+
+    assert response.model == "Qwen/Qwen3-Reranker-8B"
+    assert response.results[0].document_id == "chunk_2"
+    assert response.results[0].relevance_score == 0.91
+    assert response.results[1].document_id == "chunk_1"
+    assert response.usage["total_tokens"] == 21

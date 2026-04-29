@@ -17,6 +17,227 @@
 
 ### 2026-04-29
 
+#### 记录 072：完成模块 10 任务 02，实现子任务级 rerank 通道
+
+- 状态：已完成
+- 范围：完成模块 10 中“任务 02：实现子任务级 rerank 通道”，先打通单个 `sub-query` 内部候选集的独立 rerank 链路
+- 结果：
+  - 已新增：
+    - `src/mindwiki/llm/rerank_models.py`
+    - `src/mindwiki/llm/rerank_service.py`
+    - `src/mindwiki/application/subquery_rerank_service.py`
+  - 已扩展：
+    - `src/mindwiki/infrastructure/settings.py`
+    - `src/mindwiki/llm/providers/openai_compatible.py`
+    - `src/mindwiki/application/retrieval_models.py`
+  - 当前已建立独立 rerank 协议层：
+    - `RerankDocument`
+    - `RerankRequest`
+    - `RerankResult`
+    - `RerankResponse`
+  - 当前已建立独立 rerank service：
+    - `RerankService`
+    - `build_rerank_service()`
+  - 当前已为 `SiliconFlow` 补齐最小 `/rerank` provider：
+    - `OpenAICompatibleRerankProvider`
+  - 当前已建立模块 10 第一版应用层 rerank 输出结构：
+    - `RerankedSubQueryCandidate`
+    - `SubQueryRerankResult`
+  - 当前 `SubQueryRerankService` 已可执行：
+    - 输入一个 `SubQueryResult`
+    - 组装 `(sub_query, chunk)` rerank documents
+    - 调用独立 rerank 通道
+    - 返回当前 `sub-query` 的 reranked `top 5`
+  - 当前 reranker 配置已正式预留：
+    - `LLM_RERANK_BASE_URL`
+    - `LLM_RERANK_API_KEY`
+    - `LLM_RERANK_MODEL_ID`
+    - `LLM_RERANK_TIMEOUT_MS`
+- 验证结果：
+  - `python3 -m py_compile src/mindwiki/llm/rerank_models.py src/mindwiki/llm/rerank_service.py src/mindwiki/application/subquery_rerank_service.py` 通过
+  - `python3 -m pytest tests/test_llm_models.py tests/test_llm_provider.py tests/test_retrieval_service.py` 通过
+  - 当前共 `33` 个相关测试，全部通过
+  - 已新增测试覆盖：
+    - rerank 配置读取
+    - `SiliconFlow /rerank` payload 与结果解析
+    - 单个 `sub-query` rerank 后只保留 `top 5`
+- 当前实现边界：
+  - 当前只完成单个 `sub-query` 内部 rerank 通道
+  - 当前尚未进入：
+    - context builder
+    - citation payload
+    - 真实本地 rerank 验收脚本
+  - 当前 `rerank_reason` 先采用最小规则化承接，不额外引入生成式解释链路
+- 遗留问题：
+  - `SiliconFlow` 真实 `/rerank` 响应字段是否需要兼容更多变体，需在后续真实联调中确认
+  - 当前尚未把 rerank 结果继续送入 context builder
+- 下一步：
+  - 进入模块 10 任务 03：实现 context builder
+
+#### 记录 069：完成模块 10 任务 01，检索编排后半段设计对接与当前代码差异修正
+
+- 状态：已完成
+- 范围：完成模块 10 中“任务 01：检索编排后半段设计对接与当前代码差异修正”，对照 `Step 09.4 / 09.5 / 09.6` 与当前已落地的前半段检索编排代码，收敛后半段模块的真实输入、输出与实现边界
+- 对照结论：
+  - 已核对设计文档：
+    - `doc/design/step-09-retrieval-orchestration/09.04-subquery-level-llm-rerank.md`
+    - `doc/design/step-09-retrieval-orchestration/09.05-context-builder-truncation-and-assembly.md`
+    - `doc/design/step-09-retrieval-orchestration/09.06-citation-payload-structure.md`
+  - 已核对当前实现：
+    - `src/mindwiki/application/retrieval_models.py`
+    - `src/mindwiki/application/query_expansion_service.py`
+    - `src/mindwiki/application/subquery_retrieval_service.py`
+    - `src/mindwiki/llm/service.py`
+    - `src/mindwiki/infrastructure/settings.py`
+  - 已确认当前代码已具备可直接作为模块 10 输入的基础对象：
+    - `QueryDecomposition`
+    - `QueryExpansion`
+    - `SubQueryCandidate`
+    - `SubQueryResult`
+    - `ChunkProjection`
+    - `ChunkLocation`
+- 当前差异修正结果：
+  - 已确认 `9.4 rerank` 当前完全未实现：
+    - 没有独立 `rerank` 请求/响应协议
+    - 没有 `RerankService`
+    - 没有 `RerankedSubQueryCandidate`
+    - 没有 `SubQueryRerankResult`
+  - 已确认当前 `generate_text` 通道不应直接复用为 reranker 主通道：
+    - 当前 `LLMService` 只承接 `/chat/completions` 风格文本生成
+    - 当前 reranker 已正式确定采用：
+      - `SiliconFlow`
+      - `Qwen/Qwen3-Reranker-8B`
+    - 因此模块 10 需要新增独立 rerank provider / service
+  - 已确认 `9.5 context builder` 当前完全未实现：
+    - 没有预算模型
+    - 没有上下文分段结构
+    - 没有“每个 `sub-query` 先取前 `2` 条代表证据”的拼装逻辑
+    - 没有相邻 chunk 局部合并逻辑
+  - 已确认 `9.6 citation payload` 当前完全未实现：
+    - 没有 `citation_id`
+    - 没有 `sub_query_id`
+    - 没有 `evidence_role`
+    - 没有 `snippet`
+    - 没有面向前端/回答层的统一 citation 视图模型
+  - 已确认当前 `ChunkLocation` 仅提供：
+    - `chunk_index`
+    - `section_id`
+    - `page_number`
+    - `imported_at`
+    - 这足够作为 citation 定位层第一阶段输入，但还未转换成正式 citation payload
+- 模块 10 后续实现边界已正式收敛为：
+  - 任务 02：实现子任务级 rerank 通道
+  - 任务 03：实现 context builder
+  - 任务 04：实现 citation payload
+  - 任务 05：补本地验收脚本、README 与运行说明
+- 当前实现决策：
+  - `9.4` 只做单个 `sub-query` 内 rerank，不做跨 `sub-query` 全局排序
+  - `9.4` 采用独立 reranker 通道，不复用 `generate_text`
+  - `9.5` 当前阶段不引入预算控制层
+  - `9.6` 直接面向后续回答层输入结构设计，而不是只做调试字段
+- 明确不纳入当前模块任务 01 的内容：
+  - `Step 10` 回答生成
+  - 前端展示格式细化
+  - 评估闭环
+- 遗留问题：
+  - `SiliconFlow` 的 rerank 请求协议与返回结构需在任务 03 中按真实接口对齐
+  - `citation payload` 与后续回答层 schema 的最终兼容范围需在任务 04 中收口
+- 下一步：
+  - 进入模块 10 任务 02：实现子任务级 rerank 通道
+
+#### 记录 071：再次收敛模块 10 范围，取消当前阶段全部预算相关设计
+
+- 状态：已完成
+- 范围：根据最新对齐结果，再次收敛模块 10 当前阶段边界，取消预算相关设计，不再将预算控制作为模块 10 的任务组成部分
+- 调整结论：
+  - 当前阶段取消：
+    - `tiktoken`
+    - token 预算统计
+    - 字符预算统计
+    - 轻量预算对象
+    - `max_chunks_per_sub_query / max_total_chunks / max_chars_per_chunk` 之类的预算规则
+  - 当前阶段保留：
+    - 子任务级 rerank
+    - context builder 的结构拼装
+    - citation payload
+- 当前模块 10 任务拆解同步调整为：
+  - 任务 02：实现子任务级 rerank 通道
+  - 任务 03：实现 context builder
+  - 任务 04：实现 citation payload
+  - 任务 05：补本地验收脚本、README 与运行说明
+- 调整原因：
+  - 当前最重要的是先把后半段主链路打通
+  - 预算控制不属于当前必须前置的阻塞项
+  - 若现在继续保留预算层，会让 context builder 的实现边界变复杂
+- 当前实现原则：
+  - context builder 第一阶段只负责：
+    - 保留 `sub-query` 边界
+    - 组织代表证据
+    - 输出稳定上下文结构
+  - 不负责预算裁剪策略
+- 下一步：
+  - 进入模块 10 任务 02：实现子任务级 rerank 通道
+
+#### 记录 068：启动新开发模块，按 `Step 09.4-9.6` 完成检索编排后半段闭环
+
+- 状态：进行中
+- 范围：在模块 09 前半段 `9.1 / 9.2 / 9.3` 已完成并通过真实本地验收的基础上，启动下一开发模块，继续完成 `Step 09` 后半段闭环
+- 模块定位：
+  - 当前新模块不直接进入 `Step 10` 回答生成
+  - 当前新模块优先完成：
+    - `9.4` 子任务级 `LLM rerank`
+    - `9.5` context builder
+    - `9.6` citation payload
+  - 目标是先让检索编排链路具备“可稳定喂给生成层”的标准输出
+- 启动原因：
+  - 当前系统已经具备：
+    - query decomposition
+    - fixed query expansion
+    - per-sub-query 四路召回与归并
+  - 当前系统仍缺少：
+    - 候选集进一步重排
+    - 上下文结构拼装
+    - 引用载荷结构
+  - 若此时直接跳到 `Step 10`，回答层会建立在不稳定的检索输出之上，风险更高
+  - 已进一步确认当前模块的关键实现选择为：
+    - `9.4 rerank` 采用独立 reranker 通道
+    - reranker 模型采用：
+      - `Qwen/Qwen3-Reranker-8B`
+    - reranker 网关采用：
+      - `SiliconFlow`
+- 分步任务拆解：
+  - 任务 01：检索编排后半段设计对接与当前代码差异修正
+    - 对照 `9.4 / 9.5 / 9.6` 与当前实现完成第一轮差异梳理
+    - 明确哪些能力进入当前模块，哪些继续留给 `Step 10`
+  - 任务 02：实现子任务级 rerank 通道
+    - 先只处理单个 `sub-query` 内部候选集
+    - 独立于现有 `generate_text` 通道
+    - 采用 `SiliconFlow` 上的 `Qwen/Qwen3-Reranker-8B`
+  - 任务 03：实现 context builder
+    - 按 `sub-query` 边界、代表证据与相邻关系生成最终上下文片段集
+  - 任务 04：实现 citation payload
+    - 生成面向后续回答层的结构化引用数据
+    - 先服务后端生成链路，不急于做前端展示格式
+  - 任务 05：补本地验收脚本、README 与运行说明
+    - 固化 `Step 09` 完整闭环的真实本地验收入口
+- 当前边界判断：
+  - 本模块结束标准应是：
+    - 输出可直接喂给回答生成层的标准上下文包
+  - 本模块不应提前进入：
+    - `Step 10` 回答生成
+    - 前端交互层
+    - 评估闭环
+- 当前建议执行顺序：
+  - 先完成 `9.4 / 9.5 / 9.6` 与当前实现差异对接
+  - 再补独立 rerank 通道
+  - 然后补 context builder
+  - 最后补 citation payload 与本地验收
+- 遗留问题：
+  - `SiliconFlow` 的 rerank 接口协议是否与当前 embedding 网关完全同构，需在任务 03 中按真实接口对接
+  - `9.6` 的 citation payload 是否直接兼容后续回答层 schema，需在任务 04 中确认
+- 下一步：
+  - 开始当前模块任务 01：检索编排后半段设计对接与当前代码差异修正
+
 #### 记录 067：完成模块 09 任务 05，补本地验收脚本、README 与运行说明
 
 - 状态：已完成
@@ -2915,3 +3136,46 @@
 | 05 | 实现基础关键词 / BM25 召回 MVP | 已完成 | 已完成 PostgreSQL 原生全文检索与基础权重承接 |
 | 06 | 实现统一 `chunk hit` 返回结构与最小过滤能力 | 已完成 | 已完成 `RetrievalService` 与统一 `chunk hit` 映射 |
 | 07 | 补本地验收脚本与 README 说明 | 已完成 | 已完成检索本地验收脚本与文档闭环 |
+
+### 模块 07：`Milvus` 向量检索基础模块 MVP
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 向量检索设计对接与当前代码差异修正 | 已完成 | 已收敛 `Milvus` 选型、边界与当前缺口 |
+| 02 | 补 embedding 输入构造与版本字段承接 | 已完成 | 已补 chunk embedding 输入与版本字段写回 |
+| 03 | 接入 `Milvus` 配置、客户端与 collection schema | 已完成 | 已完成本地 `Milvus` 客户端与 collection 初始化 |
+| 04 | 实现 chunk 向量写入、失效与重建承接 | 已完成 | 已打通 import-time vector sync 最小闭环 |
+| 05 | 实现 `vector_only` 检索仓储与候选映射 | 已完成 | 已完成向量召回仓储与候选投影映射 |
+| 06 | 扩展统一检索 service，接入 `vector_only` | 已完成 | 已在统一检索入口暴露 `vector_only` |
+| 07 | 补本地 `vector_only` 验收脚本与 README 说明 | 已完成 | 已完成真实本地向量检索验收闭环 |
+
+### 模块 08：混合检索与融合排序 MVP
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 混合检索设计对接与当前代码差异修正 | 已完成 | 已收敛 `hybrid` 第一阶段范围与融合边界 |
+| 02 | 扩展候选模型与融合中间结构 | 已完成 | 已新增 `HybridCandidate` 等融合承接字段 |
+| 03 | 实现 `hybrid` 去重、RRF 与加权融合 | 已完成 | 已完成两路候选归并与融合打分 |
+| 04 | 扩展统一检索 service，接入 `hybrid` | 已完成 | 已在统一检索入口暴露 `hybrid` |
+| 05 | 补 `score_breakdown` 与排序打平规则 | 已完成 | 已补完整融合分数字段与稳定排序规则 |
+| 06 | 补本地 `hybrid` 验收脚本、README 与运行说明 | 已完成 | 已完成真实本地 `hybrid` 验收闭环 |
+
+### 模块 09：`Step 09.1-9.3` 检索编排前半段 MVP
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 检索编排设计对接与当前代码差异修正 | 已完成 | 已对齐 `9.1 / 9.2 / 9.3` 与现有检索层差距 |
+| 02 | 建立 query decomposition 协议与最小实现 | 已完成 | 已完成规则优先 `decompose / none` 输出协议 |
+| 03 | 实现固定三类查询扩展 | 已完成 | 已完成 `base_query / step_back_query / hyde_query` |
+| 04 | 实现单个 `sub-query` 内部 4 路结果归并 | 已完成 | 已完成四路召回、去重与加权 RRF |
+| 05 | 补本地验收脚本、README 与运行说明 | 已完成 | 已完成真实本地 `Step 09` 前半段验收闭环 |
+
+### 模块 10：`Step 09.4-9.6` 检索编排后半段闭环
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 检索编排后半段设计对接与当前代码差异修正 | 已完成 | 已收敛 `SiliconFlow reranker` 方案与后半段差异清单 |
+| 02 | 实现子任务级 rerank 通道 | 已完成 | 已完成独立 rerank 协议、service、provider 与 `top 5` 应用层承接 |
+| 03 | 实现 context builder | 进行中 | 负责保留 `sub-query` 边界与上下文结构拼装 |
+| 04 | 实现 citation payload | 未开始 | 输出面向回答层的结构化引用数据 |
+| 05 | 补本地验收脚本、README 与运行说明 | 未开始 | 固化 `Step 09` 完整闭环验收入口 |

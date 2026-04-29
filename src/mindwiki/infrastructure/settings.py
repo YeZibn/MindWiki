@@ -43,6 +43,10 @@ class Settings:
     llm_model_id: str = ""
     llm_model_mini_id: str = ""
     llm_timeout_ms: int = 30000
+    llm_rerank_base_url: str = ""
+    llm_rerank_api_key: str = ""
+    llm_rerank_model_id: str = ""
+    llm_rerank_timeout_ms: int = 30000
     llm_embedding_base_url: str = ""
     llm_embedding_api_key: str = ""
     llm_embedding_model_id: str = ""
@@ -73,6 +77,10 @@ def get_settings() -> Settings:
         llm_model_id=os.getenv("LLM_MODEL_ID", ""),
         llm_model_mini_id=os.getenv("LLM_MODEL_MINI_ID", ""),
         llm_timeout_ms=_get_int_env("LLM_TIMEOUT_MS", 30000),
+        llm_rerank_base_url=os.getenv("LLM_RERANK_BASE_URL", ""),
+        llm_rerank_api_key=os.getenv("LLM_RERANK_API_KEY", ""),
+        llm_rerank_model_id=os.getenv("LLM_RERANK_MODEL_ID", ""),
+        llm_rerank_timeout_ms=_get_int_env("LLM_RERANK_TIMEOUT_MS", 30000),
         llm_embedding_base_url=os.getenv("LLM_EMBEDDING_BASE_URL", ""),
         llm_embedding_api_key=os.getenv("LLM_EMBEDDING_API_KEY", ""),
         llm_embedding_model_id=os.getenv("LLM_EMBEDDING_MODEL_ID", ""),

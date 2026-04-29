@@ -18,6 +18,7 @@ from mindwiki.llm.models import (
     ValidationResult,
 )
 from mindwiki.llm.embedding_models import EmbeddingRequest, EmbeddingResponse, EmbeddingVector
+from mindwiki.llm.rerank_models import RerankRequest, RerankResponse, RerankResult
 
 
 class UrlopenCallable(Protocol):
@@ -303,3 +304,77 @@ class OpenAICompatibleEmbeddingProvider:
     def _build_endpoint(self) -> str:
         base_url = self._config.base_url.rstrip("/")
         return f"{base_url}/embeddings"
+
+
+class OpenAICompatibleRerankProvider:
+    """Adapter for OpenAI-compatible `/rerank` endpoints."""
+
+    def __init__(
+        self,
+        config: OpenAICompatibleConfig,
+        *,
+        urlopen: UrlopenCallable | None = None,
+    ) -> None:
+        self._config = config
+        self._urlopen = urlopen if urlopen is not None else request.urlopen
+
+    def build_payload(self, rerank_request: RerankRequest) -> dict[str, Any]:
+        model = rerank_request.model or self._config.default_model
+        return {
+            "model": model,
+            "query": rerank_request.query,
+            "documents": [document.text for document in rerank_request.documents],
+            "top_n": rerank_request.top_n,
+            "return_documents": False,
+        }
+
+    def rerank(self, rerank_request: RerankRequest) -> RerankResponse:
+        payload = self.build_payload(rerank_request)
+        body = json.dumps(payload).encode("utf-8")
+        endpoint = self._build_endpoint()
+        http_request = request.Request(
+            endpoint,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self._config.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        with self._urlopen(http_request, timeout=rerank_request.timeout_ms / 1000) as response:
+            raw_response = json.loads(response.read().decode("utf-8"))
+
+        raw_results = raw_response.get("results", raw_response.get("data", []))
+        results: list[RerankResult] = []
+        for item in raw_results:
+            if not isinstance(item, dict):
+                continue
+            index = item.get("index")
+            if not isinstance(index, int):
+                continue
+            if index < 0 or index >= len(rerank_request.documents):
+                continue
+            raw_score = item.get("relevance_score", item.get("score", 0.0))
+            if not isinstance(raw_score, (int, float)):
+                continue
+            document = rerank_request.documents[index]
+            results.append(
+                RerankResult(
+                    index=index,
+                    document_id=document.document_id,
+                    relevance_score=float(raw_score),
+                    metadata=dict(document.metadata),
+                )
+            )
+
+        return RerankResponse(
+            model=str(raw_response.get("model") or rerank_request.model),
+            results=tuple(results),
+            usage=OpenAICompatibleProvider._normalize_usage(raw_response.get("usage", {})),
+            raw_response=raw_response,
+        )
+
+    def _build_endpoint(self) -> str:
+        base_url = self._config.base_url.rstrip("/")
+        return f"{base_url}/rerank"
