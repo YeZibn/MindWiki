@@ -15,6 +15,53 @@
 
 ## 开发记录
 
+### 2026-04-29
+
+#### 记录 036：完成模块 05 任务 05，补调用生命周期控制与失败处理
+
+- 状态：已完成
+- 范围：完成模块 05 中“任务 05：补调用生命周期控制与失败处理”
+- 结果：
+  - 已升级 `src/mindwiki/llm/service.py`，让 `generate_text` 服务层开始真正承接调用生命周期控制
+  - 当前已落地的生命周期能力包括：
+    - 为每次请求稳定生成或继承 `request_id`
+    - 为每次实际调用生成 `attempt_id`
+    - 记录 `retry_count`
+    - 标记 `is_fallback`
+    - 支持 `max_retries`
+    - 支持 `overall_deadline_ms`
+    - 在主模型失败后，按条件切换到 mini 模型 fallback
+  - 当前重试行为已收敛为：
+    - 仅对 `response.error.retryable = true` 的失败执行重试
+    - `max_retries = N` 时，总尝试次数为 `N + 1`
+    - 不对不可重试错误继续重试
+  - 当前 fallback 行为已收敛为：
+    - 仅当主模型失败且 `allow_fallback = true` 时触发
+    - 仅当失败结果本身允许 fallback 时触发
+    - 当前 fallback 目标为 `LLM_MODEL_MINI_ID`
+    - fallback 阶段不再继续递归 fallback
+  - 当前 deadline 行为已落地为：
+    - 每轮尝试前检查是否超过 `overall_deadline_ms`
+    - 超过后直接返回 `deadline_exceeded`
+    - 不再继续执行后续重试或 fallback
+  - `build_llm_service()` 当前已支持同时装配：
+    - 主 provider：`LLM_MODEL_ID`
+    - fallback provider：`LLM_MODEL_MINI_ID`
+  - 已扩展 `tests/test_llm_service.py`，覆盖：
+    - 重试成功路径
+    - fallback 成功路径
+    - deadline 提前失败路径
+    - `attempt_id / retry_count / is_fallback` 元数据承接
+- 验证结果：
+  - `python3 -m pytest tests/test_llm_service.py tests/test_llm_provider.py tests/test_llm_models.py tests/test_cli.py` 通过
+  - 当前共 `39` 个测试，全部通过
+- 遗留问题：
+  - 当前还没有取消机制
+  - 当前还没有结构化输出 repair 流程
+  - 当前还没有 README 和本地验收脚本说明
+- 下一步：
+  - 进入模块 05 任务 06：补结构化输出校验与返回约定
+
 ### 2026-04-28
 
 #### 记录 035：完成模块 05 任务 04，实现 `generate_text` 最小可用链路
@@ -1279,6 +1326,6 @@
 | 02 | 建立统一 `LLMRequest / LLMResponse` 协议 | 已完成 | 已完成协议模型、配置读取和最小单测 |
 | 03 | 实现最小 provider 适配器 | 已完成 | 已完成 `OpenAI-compatible /chat/completions` 适配器与错误映射 |
 | 04 | 实现 `generate_text` 最小可用链路 | 已完成 | 已完成 service 入口并通过真实网关 smoke test |
-| 05 | 补调用生命周期控制与失败处理 | 未开始 | 对齐超时、重试、fallback、request_id 等最小控制 |
+| 05 | 补调用生命周期控制与失败处理 | 已完成 | 已完成 retry / deadline / fallback / attempt_id |
 | 06 | 补结构化输出校验与返回约定 | 未开始 | 对齐 `parsed_output / validation / error` 的最小承接 |
 | 07 | 补 README、本地配置说明与验收脚本 | 未开始 | 支撑真实本地联调与回归验证 |
