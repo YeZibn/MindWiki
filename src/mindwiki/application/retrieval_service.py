@@ -54,10 +54,33 @@ class RetrievalService:
                 hits=hits,
             )
 
-        if query.retrieval_mode != "bm25_only":
+        if query.retrieval_mode == "hybrid":
+            bm25_candidates = self._repository.search_bm25(
+                query.query,
+                query.filters,
+                limit=query.top_k,
+            )
+            vector_candidates = self._repository.search_vector(
+                query.query,
+                query.filters,
+                limit=query.top_k,
+            )
+            merged = merge_hybrid_candidates(
+                bm25_candidates=bm25_candidates,
+                vector_candidates=vector_candidates,
+            )
+            scored = score_hybrid_candidates(merged)
+            hits = tuple(self._hybrid_candidate_to_hit(candidate) for candidate in scored[: query.top_k])
+            return RetrievalResult(
+                query=query.query,
+                retrieval_mode=query.retrieval_mode,
+                hits=hits,
+            )
+
+        if query.retrieval_mode not in {"bm25_only", "vector_only", "hybrid"}:
             raise ValueError(
                 f"Unsupported retrieval_mode: {query.retrieval_mode}. "
-                "Only bm25_only and vector_only are implemented in the current stage."
+                "Only bm25_only, vector_only, and hybrid are implemented in the current stage."
             )
         raise AssertionError("unreachable")
 
@@ -95,6 +118,23 @@ class RetrievalService:
             score_breakdown={"vector_score": candidate.score},
         )
 
+    @staticmethod
+    def _hybrid_candidate_to_hit(candidate: HybridCandidate) -> ChunkHit:
+        projection = candidate.projection
+        return ChunkHit(
+            chunk_id=projection.chunk_id,
+            document_id=projection.document_id,
+            section_id=projection.section_id,
+            document_title=projection.document_title,
+            section_title=projection.section_title,
+            chunk_text=projection.chunk_text,
+            source_type=projection.source_type,
+            location=projection.location,
+            score=float(candidate.final_score or 0.0),
+            match_sources=candidate.match_sources,
+            score_breakdown={"final_score": float(candidate.final_score or 0.0)},
+        )
+
 
 def merge_hybrid_candidates(
     bm25_candidates: tuple[BM25Candidate, ...],
@@ -114,6 +154,7 @@ def merge_hybrid_candidates(
                 vector_hit=True,
                 vector_score=candidate.score,
                 rank_vector=rank,
+                match_sources=candidate.match_sources,
             )
             continue
 
@@ -126,6 +167,7 @@ def merge_hybrid_candidates(
             bm25_score=existing.bm25_score,
             rank_vector=rank,
             rank_bm25=existing.rank_bm25,
+            match_sources=_merge_match_sources(existing.match_sources, candidate.match_sources),
         )
 
     for rank, candidate in enumerate(bm25_candidates, start=1):
@@ -138,6 +180,7 @@ def merge_hybrid_candidates(
                 bm25_hit=True,
                 bm25_score=candidate.score,
                 rank_bm25=rank,
+                match_sources=candidate.match_sources,
             )
             continue
 
@@ -150,6 +193,7 @@ def merge_hybrid_candidates(
             bm25_score=candidate.score,
             rank_vector=existing.rank_vector,
             rank_bm25=rank,
+            match_sources=_merge_match_sources(existing.match_sources, candidate.match_sources),
         )
 
     return tuple(merged.values())
@@ -201,6 +245,7 @@ def _apply_rrf(candidate: HybridCandidate) -> HybridCandidate:
         bm25_score=candidate.bm25_score,
         rank_vector=candidate.rank_vector,
         rank_bm25=candidate.rank_bm25,
+        match_sources=candidate.match_sources,
         rrf_score=vector_rrf_part + bm25_rrf_part,
         normalized_rrf_score=candidate.normalized_rrf_score,
         normalized_vector_score=candidate.normalized_vector_score,
@@ -252,6 +297,7 @@ def _normalize_candidate_field(
                 bm25_score=candidate.bm25_score,
                 rank_vector=candidate.rank_vector,
                 rank_bm25=candidate.rank_bm25,
+                match_sources=candidate.match_sources,
                 rrf_score=candidate.rrf_score,
                 normalized_rrf_score=normalized_value if field_name == "rrf_score" else candidate.normalized_rrf_score,
                 normalized_vector_score=normalized_value if field_name == "vector_score" else candidate.normalized_vector_score,
@@ -310,6 +356,7 @@ def _apply_final_score(candidate: HybridCandidate) -> HybridCandidate:
         bm25_score=candidate.bm25_score,
         rank_vector=candidate.rank_vector,
         rank_bm25=candidate.rank_bm25,
+        match_sources=candidate.match_sources,
         rrf_score=candidate.rrf_score,
         normalized_rrf_score=candidate.normalized_rrf_score,
         normalized_vector_score=candidate.normalized_vector_score,
@@ -317,3 +364,14 @@ def _apply_final_score(candidate: HybridCandidate) -> HybridCandidate:
         dual_hit_bonus=dual_hit_bonus,
         final_score=final_score,
     )
+
+
+def _merge_match_sources(
+    left: tuple[str, ...],
+    right: tuple[str, ...],
+) -> tuple[str, ...]:
+    merged: list[str] = []
+    for value in (*left, *right):
+        if value not in merged:
+            merged.append(value)
+    return tuple(merged)

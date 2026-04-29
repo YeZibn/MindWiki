@@ -17,6 +17,54 @@
 
 ### 2026-04-29
 
+#### 记录 059：完成模块 08 任务 04，扩展统一检索 service，接入 `hybrid`
+
+- 状态：已完成
+- 范围：完成模块 08 中“任务 04：扩展统一检索 service，接入 `hybrid`”
+- 结果：
+  - 已扩展 `src/mindwiki/application/retrieval_service.py`
+  - 当前统一检索 service 已支持三种模式：
+    - `bm25_only`
+    - `vector_only`
+    - `hybrid`
+  - 当前 `hybrid` 检索链路已按以下顺序工作：
+    - 执行 `search_bm25()`
+    - 执行 `search_vector()`
+    - 按 `chunk_id` 合并两路候选
+    - 执行 `RRF + 加权融合`
+    - 取前 `top_k` 条结果并映射为统一 `ChunkHit`
+  - 已在 `HybridCandidate` 中补最小 `match_sources` 承接：
+    - 当前会合并：
+      - `vector`
+      - BM25 命中来源字段，例如 `section_title / chunk_text`
+  - 当前 `hybrid` 对外返回已收敛为：
+    - `score = final_score`
+    - `match_sources` 为两路命中来源的合并结果
+    - `score_breakdown` 当前最小先承接：
+      - `final_score`
+  - 当前实现边界保持收敛：
+    - 本任务只完成 `hybrid` 对外编排接入
+    - 尚未把完整融合中间分数字段全部透传到 `score_breakdown`
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_retrieval_projection.py tests/test_embedding_service.py tests/test_vector_index_service.py tests/test_llm_provider.py tests/test_llm_service.py tests/test_cli.py tests/test_llm_models.py` 通过
+  - 当前共 `59` 个测试，全部通过
+  - 已新增测试覆盖：
+    - `hybrid` 模式同时调用两路仓储
+    - `hybrid` 返回 `final_score`
+    - `hybrid` 返回合并后的 `match_sources`
+- 遗留问题：
+  - 当前 `score_breakdown` 仍未补全：
+    - `vector_score`
+    - `bm25_score`
+    - `rrf_score`
+    - `normalized_rrf_score`
+    - `normalized_vector_score`
+    - `normalized_bm25_score`
+    - `dual_hit_bonus`
+  - 当前还没有真实本地 `hybrid` 端到端联调与固定验收脚本
+- 下一步：
+  - 进入模块 08 任务 05：补 `score_breakdown` 与排序打平规则
+
 #### 记录 058：完成模块 08 任务 03，实现 `hybrid` 去重、RRF 与加权融合
 
 - 状态：已完成

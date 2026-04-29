@@ -130,7 +130,7 @@ def test_retrieve_wraps_vector_candidates_into_chunk_hits() -> None:
     assert repository.calls == [("vector_only", "semantic recall", RetrievalFilters(), 2)]
 
 
-def test_retrieve_rejects_non_bm25_modes() -> None:
+def test_retrieve_rejects_unknown_modes() -> None:
     repository = RecordingRetrievalRepository((build_candidate(),))
     service = RetrievalService(repository=repository)
 
@@ -138,13 +138,44 @@ def test_retrieve_rejects_non_bm25_modes() -> None:
         service.retrieve(
             RetrievalQuery(
                 query="retrieval",
-                retrieval_mode="hybrid",
+                retrieval_mode="unsupported_mode",
             )
         )
     except ValueError as exc:
         assert "Unsupported retrieval_mode" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unsupported retrieval mode")
+
+
+def test_retrieve_hybrid_merges_two_channels_and_returns_final_score() -> None:
+    bm25_candidate = build_candidate()
+    vector_candidate = VectorCandidate(
+        projection=bm25_candidate.projection,
+        score=0.91,
+    )
+    repository = RecordingRetrievalRepository((bm25_candidate,), (vector_candidate,))
+    service = RetrievalService(repository=repository)
+
+    result = service.retrieve(
+        RetrievalQuery(
+            query="hybrid retrieval",
+            top_k=3,
+            retrieval_mode="hybrid",
+        )
+    )
+
+    assert result.query == "hybrid retrieval"
+    assert result.retrieval_mode == "hybrid"
+    assert len(result.hits) == 1
+    hit = result.hits[0]
+    assert hit.chunk_id == bm25_candidate.projection.chunk_id
+    assert hit.score > 0
+    assert hit.match_sources == ("vector", "section_title", "chunk_text")
+    assert "final_score" in hit.score_breakdown
+    assert repository.calls == [
+        ("bm25_only", "hybrid retrieval", RetrievalFilters(), 3),
+        ("vector_only", "hybrid retrieval", RetrievalFilters(), 3),
+    ]
 
 
 def test_merge_hybrid_candidates_combines_dual_hit_candidates_by_chunk_id() -> None:
@@ -175,6 +206,7 @@ def test_merge_hybrid_candidates_combines_dual_hit_candidates_by_chunk_id() -> N
             bm25_score=0.73,
             rank_vector=1,
             rank_bm25=1,
+            match_sources=("vector", "section_title", "chunk_text"),
         ),
     )
 
@@ -229,6 +261,7 @@ def test_merge_hybrid_candidates_preserves_single_channel_hits_and_ranks() -> No
             bm25_score=None,
             rank_vector=1,
             rank_bm25=None,
+            match_sources=("vector",),
         ),
         HybridCandidate(
             chunk_id=second_projection.chunk_id,
@@ -239,6 +272,7 @@ def test_merge_hybrid_candidates_preserves_single_channel_hits_and_ranks() -> No
             bm25_score=0.63,
             rank_vector=2,
             rank_bm25=1,
+            match_sources=("vector", "chunk_text"),
         ),
     )
 
@@ -290,6 +324,7 @@ def test_score_hybrid_candidates_applies_rrf_normalization_and_final_score() -> 
             bm25_score=0.73,
             rank_vector=1,
             rank_bm25=2,
+            match_sources=("vector", "section_title", "chunk_text"),
         ),
         HybridCandidate(
             chunk_id=second_projection.chunk_id,
@@ -300,6 +335,7 @@ def test_score_hybrid_candidates_applies_rrf_normalization_and_final_score() -> 
             bm25_score=None,
             rank_vector=2,
             rank_bm25=None,
+            match_sources=("vector",),
         ),
         HybridCandidate(
             chunk_id=third_projection.chunk_id,
@@ -310,6 +346,7 @@ def test_score_hybrid_candidates_applies_rrf_normalization_and_final_score() -> 
             bm25_score=0.81,
             rank_vector=None,
             rank_bm25=1,
+            match_sources=("chunk_text",),
         ),
     )
 
@@ -345,6 +382,7 @@ def test_score_hybrid_candidates_uses_one_when_all_values_in_a_column_are_equal(
             bm25_score=None,
             rank_vector=1,
             rank_bm25=None,
+            match_sources=("vector",),
         ),
         HybridCandidate(
             chunk_id=UUID("00000000-0000-0000-0000-000000000099"),
@@ -366,6 +404,7 @@ def test_score_hybrid_candidates_uses_one_when_all_values_in_a_column_are_equal(
             bm25_score=None,
             rank_vector=2,
             rank_bm25=None,
+            match_sources=("vector",),
         ),
     )
 

@@ -91,6 +91,7 @@ class HybridCandidate:
     bm25_score: float | None = None
     rank_vector: int | None = None
     rank_bm25: int | None = None
+    match_sources: tuple[str, ...] = field(default_factory=tuple)
     rrf_score: float | None = None
     normalized_rrf_score: float | None = None
     normalized_vector_score: float | None = None
