@@ -17,6 +17,56 @@
 
 ### 2026-04-29
 
+#### 记录 073：完成模块 10 任务 03，实现 context builder
+
+- 状态：已完成
+- 范围：完成模块 10 中“任务 03：实现 context builder”，先打通从多个 `SubQueryRerankResult` 到结构化上下文包的最小拼装链路
+- 结果：
+  - 已新增：
+    - `src/mindwiki/application/context_builder_service.py`
+  - 已扩展：
+    - `src/mindwiki/application/retrieval_models.py`
+  - 当前已建立模块 10 第一版 context builder 输出结构：
+    - `ContextEvidenceItem`
+    - `ContextSubQuerySection`
+    - `ContextBuildResult`
+  - 当前 `ContextBuilderService.build_context()` 已按当前讨论结论落地最小实现：
+    - 输入多个 `SubQueryRerankResult`
+    - 保留 `sub-query` 边界
+    - 每个 `sub-query` 固定先取 rerank 后前 `2` 条
+    - 同一 `sub-query` 内、同一文档、连续 `chunk_index` 的候选允许做最小合并
+    - 输出结构化 context sections，而不是直接拼成一段大文本
+  - 当前 evidence role 承接规则已明确为：
+    - 第一条代表证据记为：
+      - `primary`
+    - 后续保留证据记为：
+      - `supporting`
+- 验证结果：
+  - `python3 -m py_compile src/mindwiki/application/context_builder_service.py src/mindwiki/application/retrieval_models.py` 通过
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_llm_models.py tests/test_llm_provider.py` 通过
+  - 当前共 `34` 个相关测试，全部通过
+  - 已新增测试覆盖：
+    - 保留 `sub-query` sections
+    - 每个 `sub-query` 只取前 `2` 条 rerank 候选
+    - 连续 chunk 的最小合并逻辑
+- 当前实现边界：
+  - 当前只输出结构化 context 包
+  - 当前不做：
+    - 预算控制
+    - 全局打平
+    - 复杂语义合并
+    - 回答生成文本拼装
+  - 当前 context builder 仍未输出 citation payload，留给下一任务承接
+- 遗留问题：
+  - 当前连续 chunk 合并只按结构条件：
+    - 同一 `sub-query`
+    - 同一文档
+    - 连续 `chunk_index`
+    - 尚未引入更复杂的语义连续判断
+  - 当前尚未将 context output 转成统一 citation 视图
+- 下一步：
+  - 进入模块 10 任务 04：实现 citation payload
+
 #### 记录 072：完成模块 10 任务 02，实现子任务级 rerank 通道
 
 - 状态：已完成
@@ -3176,6 +3226,6 @@
 | --- | --- | --- | --- |
 | 01 | 检索编排后半段设计对接与当前代码差异修正 | 已完成 | 已收敛 `SiliconFlow reranker` 方案与后半段差异清单 |
 | 02 | 实现子任务级 rerank 通道 | 已完成 | 已完成独立 rerank 协议、service、provider 与 `top 5` 应用层承接 |
-| 03 | 实现 context builder | 进行中 | 负责保留 `sub-query` 边界与上下文结构拼装 |
-| 04 | 实现 citation payload | 未开始 | 输出面向回答层的结构化引用数据 |
+| 03 | 实现 context builder | 已完成 | 已完成分段结构、前 `2` 条证据承接与连续 chunk 最小合并 |
+| 04 | 实现 citation payload | 进行中 | 输出面向回答层的结构化引用数据 |
 | 05 | 补本地验收脚本、README 与运行说明 | 未开始 | 固化 `Step 09` 完整闭环验收入口 |

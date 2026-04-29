@@ -109,6 +109,38 @@ class SubQueryRerankResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ContextEvidenceItem:
+    """One structured evidence item prepared for context assembly."""
+
+    chunk_ids: tuple[UUID, ...]
+    document_id: UUID
+    section_id: UUID | None
+    document_title: str
+    section_title: str | None
+    source_type: str
+    chunk_text: str
+    location: ChunkLocation
+    rerank_score: float
+    evidence_role: str = "supporting"
+
+
+@dataclass(frozen=True, slots=True)
+class ContextSubQuerySection:
+    """Structured context section for one sub-query."""
+
+    sub_query_id: str
+    sub_query_text: str
+    evidence_items: tuple[ContextEvidenceItem, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
+class ContextBuildResult:
+    """Structured context package built from reranked sub-query results."""
+
+    sections: tuple[ContextSubQuerySection, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""
 

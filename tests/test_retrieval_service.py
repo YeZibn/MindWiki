@@ -12,12 +12,15 @@ from mindwiki.application.retrieval_models import (
     HybridCandidate,
     QueryDecomposition,
     QueryExpansion,
+    RerankedSubQueryCandidate,
     RetrievalFilters,
     RetrievalQuery,
     SubQueryCandidate,
+    SubQueryRerankResult,
     SubQueryResult,
     VectorCandidate,
 )
+from mindwiki.application.context_builder_service import ContextBuilderService
 from mindwiki.application.query_decomposition_service import QueryDecompositionService
 from mindwiki.application.query_expansion_service import QueryExpansionService
 from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates, score_hybrid_candidates
@@ -420,6 +423,109 @@ def test_sub_query_rerank_service_reranks_candidates_and_keeps_top_five() -> Non
     payload = rerank_service.calls[0]
     assert payload.query == "Step 8的职责？"
     assert payload.top_n == 5
+
+
+def test_context_builder_keeps_sub_query_sections_and_top_two_evidence_items() -> None:
+    projection = build_candidate().projection
+    service = ContextBuilderService()
+
+    result = service.build_context(
+        (
+            SubQueryRerankResult(
+                sub_query_id="sq_1",
+                sub_query_text="Step 8的职责？",
+                reranked_candidates=(
+                    RerankedSubQueryCandidate(
+                        chunk_id=UUID("00000000-0000-0000-0000-000000000061"),
+                        projection=ChunkProjection(
+                            chunk_id=UUID("00000000-0000-0000-0000-000000000061"),
+                            document_id=projection.document_id,
+                            section_id=projection.section_id,
+                            document_title="Step 8 Doc",
+                            section_title="Section A",
+                            chunk_text="Step 8 covers indexing.",
+                            source_type="markdown",
+                            document_type="markdown",
+                            document_tags=projection.document_tags,
+                            location=ChunkLocation(chunk_index=1, section_id=projection.section_id),
+                        ),
+                        rerank_score=0.95,
+                    ),
+                    RerankedSubQueryCandidate(
+                        chunk_id=UUID("00000000-0000-0000-0000-000000000062"),
+                        projection=ChunkProjection(
+                            chunk_id=UUID("00000000-0000-0000-0000-000000000062"),
+                            document_id=projection.document_id,
+                            section_id=projection.section_id,
+                            document_title="Step 8 Doc",
+                            section_title="Section A",
+                            chunk_text="Step 8 also covers recall.",
+                            source_type="markdown",
+                            document_type="markdown",
+                            document_tags=projection.document_tags,
+                            location=ChunkLocation(chunk_index=2, section_id=projection.section_id),
+                        ),
+                        rerank_score=0.91,
+                    ),
+                    RerankedSubQueryCandidate(
+                        chunk_id=UUID("00000000-0000-0000-0000-000000000063"),
+                        projection=ChunkProjection(
+                            chunk_id=UUID("00000000-0000-0000-0000-000000000063"),
+                            document_id=UUID("00000000-0000-0000-0000-000000000099"),
+                            section_id=projection.section_id,
+                            document_title="Other Doc",
+                            section_title="Section B",
+                            chunk_text="Should be ignored because only top two are kept.",
+                            source_type="markdown",
+                            document_type="markdown",
+                            document_tags=projection.document_tags,
+                            location=ChunkLocation(chunk_index=1, section_id=projection.section_id),
+                        ),
+                        rerank_score=0.88,
+                    ),
+                ),
+            ),
+            SubQueryRerankResult(
+                sub_query_id="sq_2",
+                sub_query_text="Step 9的职责？",
+                reranked_candidates=(
+                    RerankedSubQueryCandidate(
+                        chunk_id=UUID("00000000-0000-0000-0000-000000000064"),
+                        projection=ChunkProjection(
+                            chunk_id=UUID("00000000-0000-0000-0000-000000000064"),
+                            document_id=UUID("00000000-0000-0000-0000-000000000065"),
+                            section_id=projection.section_id,
+                            document_title="Step 9 Doc",
+                            section_title="Section C",
+                            chunk_text="Step 9 covers orchestration.",
+                            source_type="markdown",
+                            document_type="markdown",
+                            document_tags=projection.document_tags,
+                            location=ChunkLocation(chunk_index=4, section_id=projection.section_id),
+                        ),
+                        rerank_score=0.93,
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert len(result.sections) == 2
+    first_section = result.sections[0]
+    assert first_section.sub_query_id == "sq_1"
+    assert len(first_section.evidence_items) == 1
+    assert first_section.evidence_items[0].evidence_role == "primary"
+    assert first_section.evidence_items[0].chunk_text == "Step 8 covers indexing.\n\nStep 8 also covers recall."
+    assert first_section.evidence_items[0].chunk_ids == (
+        UUID("00000000-0000-0000-0000-000000000061"),
+        UUID("00000000-0000-0000-0000-000000000062"),
+    )
+
+    second_section = result.sections[1]
+    assert second_section.sub_query_id == "sq_2"
+    assert len(second_section.evidence_items) == 1
+    assert second_section.evidence_items[0].evidence_role == "primary"
+    assert second_section.evidence_items[0].chunk_text == "Step 9 covers orchestration."
 
 
 def test_retrieve_passes_strong_filters_to_repository() -> None:
