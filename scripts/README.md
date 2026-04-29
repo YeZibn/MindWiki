@@ -13,3 +13,4 @@ Current scope:
 - `verify_local_retrieval.py`: run a minimal end-to-end `bm25_only` retrieval verification against the local PostgreSQL database
 - `verify_local_vector_retrieval.py`: run a minimal end-to-end `vector_only` retrieval verification against the local PostgreSQL and Milvus setup
 - `verify_local_hybrid_retrieval.py`: run a minimal end-to-end `hybrid` retrieval verification against the local PostgreSQL, embedding gateway, and Milvus setup
+- `verify_local_step09_orchestration.py`: run a minimal end-to-end verification for `Step 09` front-half orchestration, including query decomposition, fixed query expansion, and per-sub-query four-route retrieval merge

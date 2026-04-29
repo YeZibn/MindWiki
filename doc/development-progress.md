@@ -17,6 +17,128 @@
 
 ### 2026-04-29
 
+#### 记录 067：完成模块 09 任务 05，补本地验收脚本、README 与运行说明
+
+- 状态：已完成
+- 范围：完成模块 09 中“任务 05：补本地验收脚本、README 与运行说明”，为 `Step 09.1-9.3` 前半段提供真实本地验收入口与文档说明
+- 结果：
+  - 已新增：
+    - `scripts/verify_local_step09_orchestration.py`
+  - 当前本地验收脚本已串起模块 09 前半段完整链路：
+    - 导入一份包含 `Step 8 / Step 9` 内容的 Markdown 样例
+    - 执行 query decomposition
+    - 对每个 `sub-query` 执行固定三类扩展：
+      - `base_query`
+      - `step_back_query`
+      - `hyde_query`
+    - 对每个 `sub-query` 执行四路召回与子任务内归并
+    - 输出独立 `sub-query` 结果摘要与 `fused_rrf_score`
+  - 已更新 `README.md`，补充：
+    - 模块 09 前半段当前能力边界
+    - `query_decomposition_service / query_expansion_service / subquery_retrieval_service` 入口说明
+    - 最小 Step 09 前半段示例
+    - 本地验收脚本运行命令
+  - 已更新 `scripts/README.md`，补充 `verify_local_step09_orchestration.py` 脚本说明
+  - 已同步补齐本地 `.env` 中缺失的：
+    - `LLM_BASE_URL`
+    - `LLM_API_KEY`
+    - `LLM_MODEL_ID`
+    - `LLM_MODEL_MINI_ID`
+    - `LLM_EMBEDDING_BASE_URL`
+    - `LLM_EMBEDDING_API_KEY`
+    - `LLM_EMBEDDING_MODEL_ID`
+    - `SYSTEM_MEMORY_MILVUS_URI`
+- 验证结果：
+  - `python3 -m py_compile scripts/verify_local_step09_orchestration.py` 通过
+  - `python3 -m pytest tests/test_retrieval_service.py` 通过
+  - 已完成一次真实本地 `Step 09` 前半段验收脚本执行
+  - 当前真实返回已确认：
+    - `decomposition_mode = decompose`
+    - `sub_queries = ["Step 8的职责？", "Step 9的职责？"]`
+    - 每个 `sub-query` 都成功生成：
+      - `step_back_query`
+      - `hyde_query`
+    - 每个 `sub-query` 都成功返回独立候选集
+    - 顶层候选已返回：
+      - `hit_sources`
+      - 四路 rank 信息
+      - `fused_rrf_score`
+- 当前实现边界：
+  - 模块 09 的 `9.1 / 9.2 / 9.3` 前半段已形成最小闭环
+  - 当前尚未进入：
+    - `9.4` 子任务级 LLM rerank
+    - `9.5` context builder
+    - `9.6` citation payload
+    - Step 10 生成链路
+- 遗留问题：
+  - 当前真实样例中顶层候选主要命中向量三路，`base_bm25` 不保证每次都命中，这属于当前设计允许范围
+  - 当前脚本仍是开发验收入口，尚未下沉为 CLI 子命令
+- 下一步：
+  - 模块 09 前半段已完成，可进入下一开发模块讨论
+
+#### 记录 066：完成模块 09 任务 04，实现单个 `sub-query` 内部 4 路结果归并
+
+- 状态：已完成
+- 范围：完成模块 09 中“任务 04：实现单个 `sub-query` 内部 4 路结果归并”，对固定扩展后的单个检索单元执行：
+  - `base_query + bm25`
+  - `base_query + vector`
+  - `step_back_query + vector`
+  - `hyde_query + vector`
+- 结果：
+  - 已在 `src/mindwiki/application/retrieval_models.py` 中新增：
+    - `SubQueryCandidate`
+    - `SubQueryResult`
+  - 已新增 `src/mindwiki/application/subquery_retrieval_service.py`
+  - 当前已建立单个 `sub-query` 的独立执行与输出结构：
+    - 输入：
+      - `sub_query_id`
+      - `sub_query_text`
+      - `QueryExpansion`
+    - 输出：
+      - `SubQueryResult`
+      - `candidates[]`
+  - 当前已按 `Step 9.3` 第一阶段规则实现：
+    - 4 路检索执行
+    - 按 `chunk_id` 精确去重
+    - 保留命中来源：
+      - `base_bm25`
+      - `base_vector`
+      - `step_back_vector`
+      - `hyde_vector`
+    - 保留各路 rank：
+      - `rank_base_bm25`
+      - `rank_base_vector`
+      - `rank_step_back_vector`
+      - `rank_hyde_vector`
+    - 按融合版 RRF 计算：
+      - `k = 60`
+      - `base_bm25 = 0.35`
+      - `base_vector = 0.30`
+      - `step_back_vector = 0.20`
+      - `hyde_vector = 0.15`
+  - 当前已明确模块边界：
+    - 本任务只输出单个 `sub-query` 的独立候选集
+    - 当前仍未进行多个 `sub-query` 间的全局打平
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py` 通过
+  - 当前检索相关测试共 `20` 个，全部通过
+  - 已新增测试覆盖：
+    - 四路结果按 `chunk_id` 合并
+    - 融合版 RRF 排序
+    - 单个 `sub-query` 执行器按四路顺序调用底层仓储并返回独立候选集
+- 当前实现边界：
+  - 已完成 `9.1 / 9.2 / 9.3` 的最小代码落地
+  - 当前尚未进入：
+    - `9.4` 子任务级 rerank
+    - `9.5` context builder
+    - `9.6` citation payload
+    - Step 10 生成链路
+- 遗留问题：
+  - 当前新能力仍是独立服务，尚未补统一本地验收脚本和 README 入口
+  - 当前尚未把“query decomposition -> query expansion -> sub-query retrieval”串成完整模块 09 前半段演示链路
+- 下一步：
+  - 进入模块 09 任务 05：补本地验收脚本、README 与运行说明
+
 #### 记录 065：完成模块 09 任务 03，建立固定三类查询扩展服务
 
 - 状态：已完成

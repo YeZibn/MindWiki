@@ -37,6 +37,9 @@ Current non-CLI integration entrypoint:
 - `src/mindwiki/llm/service.py` exposes the first `generate_text` service entrypoint for OpenAI-compatible LLM calls
 - `src/mindwiki/llm/embedding_service.py` exposes the first embedding generation service entrypoint for OpenAI-compatible embedding calls
 - `src/mindwiki/application/retrieval_service.py` exposes the first `bm25_only` retrieval service entrypoint
+- `src/mindwiki/application/query_decomposition_service.py` exposes the first `Step 09.1` query decomposition service entrypoint
+- `src/mindwiki/application/query_expansion_service.py` exposes the first `Step 09.2` fixed `base_query / step_back_query / hyde_query` expansion service entrypoint
+- `src/mindwiki/application/subquery_retrieval_service.py` exposes the first `Step 09.3` per-sub-query four-route retrieval merge entrypoint
 
 Single-file import:
 
@@ -85,7 +88,11 @@ Current limitation:
 - structured output handling currently supports minimal local JSON parsing and lightweight schema checks
 - citation validation and repair retries are not implemented yet
 - retrieval currently supports `bm25_only`, `vector_only`, and `hybrid`
-- rerank and Step 09 orchestration are not implemented yet
+- Step 09 currently implements only the front half:
+  - query decomposition
+  - fixed query expansion
+  - per-sub-query four-route retrieval merge
+- rerank, context builder, citation payload, and Step 10 generation are not implemented yet
 
 ## LLM Setup
 
@@ -243,6 +250,34 @@ result = service.retrieve(
 
 for hit in result.hits:
     print(hit.document_title, hit.score, hit.score_breakdown)
+```
+
+Minimal Step 09 front-half orchestration example:
+
+```python
+from mindwiki.application.query_decomposition_service import QueryDecompositionService
+from mindwiki.application.query_expansion_service import build_query_expansion_service
+from mindwiki.application.subquery_retrieval_service import SubQueryRetrievalService
+
+decomposition = QueryDecompositionService().decompose("分别总结 Step 8 和 Step 9 的职责")
+expansion_service = build_query_expansion_service()
+sub_query_service = SubQueryRetrievalService()
+
+for index, sub_query in enumerate(decomposition.sub_queries, start=1):
+    expansion = expansion_service.expand(sub_query)
+    result = sub_query_service.retrieve_for_sub_query(
+        sub_query_id=f"sq_{index}",
+        sub_query_text=sub_query,
+        expansion=expansion,
+        top_k=3,
+    )
+    print(result.sub_query_id, result.sub_query_text, len(result.candidates))
+```
+
+Local Step 09 front-half verification command:
+
+```bash
+PYTHONPATH=src /opt/miniconda3/bin/python3 scripts/verify_local_step09_orchestration.py
 ```
 
 PostgreSQL persistence setup:

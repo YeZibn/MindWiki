@@ -58,6 +58,36 @@ class QueryExpansion:
 
 
 @dataclass(frozen=True, slots=True)
+class SubQueryCandidate:
+    """Merged candidate inside one sub-query after 4-route retrieval."""
+
+    chunk_id: UUID
+    projection: ChunkProjection
+    hit_sources: tuple[str, ...] = field(default_factory=tuple)
+    rank_base_bm25: int | None = None
+    rank_base_vector: int | None = None
+    rank_step_back_vector: int | None = None
+    rank_hyde_vector: int | None = None
+    base_bm25_score: float | None = None
+    base_vector_score: float | None = None
+    step_back_vector_score: float | None = None
+    hyde_vector_score: float | None = None
+    fused_rrf_score: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SubQueryResult:
+    """Independent candidate set for one sub-query in step 9.3."""
+
+    sub_query_id: str
+    sub_query_text: str
+    base_query: str
+    step_back_query: str
+    hyde_query: str
+    candidates: tuple[SubQueryCandidate, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""
 

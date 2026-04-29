@@ -14,11 +14,17 @@ from mindwiki.application.retrieval_models import (
     QueryExpansion,
     RetrievalFilters,
     RetrievalQuery,
+    SubQueryCandidate,
     VectorCandidate,
 )
 from mindwiki.application.query_decomposition_service import QueryDecompositionService
 from mindwiki.application.query_expansion_service import QueryExpansionService
 from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates, score_hybrid_candidates
+from mindwiki.application.subquery_retrieval_service import (
+    SubQueryRetrievalService,
+    merge_sub_query_candidates,
+    score_sub_query_candidates,
+)
 from mindwiki.llm.models import LLMError, LLMResponse, LLMValidation, ResponseTiming
 
 
@@ -222,6 +228,127 @@ def test_query_expansion_raises_when_llm_generation_fails() -> None:
 
     with pytest.raises(RuntimeError, match="Failed to generate query expansion"):
         service.expand("为什么要给 chunk 打分？")
+
+
+def test_merge_sub_query_candidates_combines_all_four_routes_by_chunk_id() -> None:
+    projection = build_candidate().projection
+
+    merged = merge_sub_query_candidates(
+        base_bm25_candidates=(
+            BM25Candidate(
+                projection=projection,
+                score=0.73,
+                match_sources=("chunk_text",),
+            ),
+        ),
+        base_vector_candidates=(VectorCandidate(projection=projection, score=0.91),),
+        step_back_vector_candidates=(VectorCandidate(projection=projection, score=0.81),),
+        hyde_vector_candidates=(VectorCandidate(projection=projection, score=0.77),),
+    )
+
+    assert merged == (
+        SubQueryCandidate(
+            chunk_id=projection.chunk_id,
+            projection=projection,
+            hit_sources=("base_vector", "step_back_vector", "hyde_vector", "base_bm25"),
+            rank_base_bm25=1,
+            rank_base_vector=1,
+            rank_step_back_vector=1,
+            rank_hyde_vector=1,
+            base_bm25_score=0.73,
+            base_vector_score=0.91,
+            step_back_vector_score=0.81,
+            hyde_vector_score=0.77,
+            fused_rrf_score=None,
+        ),
+    )
+
+
+def test_score_sub_query_candidates_applies_weighted_rrf_ordering() -> None:
+    projection = build_candidate().projection
+    second_projection = ChunkProjection(
+        chunk_id=UUID("00000000-0000-0000-0000-000000000041"),
+        document_id=UUID("00000000-0000-0000-0000-000000000042"),
+        section_id=UUID("00000000-0000-0000-0000-000000000043"),
+        document_title="Step 9 Notes",
+        section_title="Orchestration",
+        chunk_text="Sub-query orchestration keeps task boundaries.",
+        source_type="markdown",
+        document_type="markdown",
+        document_tags=("step9",),
+        location=ChunkLocation(
+            chunk_index=2,
+            section_id=UUID("00000000-0000-0000-0000-000000000043"),
+            imported_at=datetime(2026, 4, 29, 12, 0, 0),
+        ),
+    )
+
+    scored = score_sub_query_candidates(
+        (
+            SubQueryCandidate(
+                chunk_id=projection.chunk_id,
+                projection=projection,
+                hit_sources=("base_bm25", "base_vector"),
+                rank_base_bm25=1,
+                rank_base_vector=2,
+                base_bm25_score=0.73,
+                base_vector_score=0.91,
+            ),
+            SubQueryCandidate(
+                chunk_id=second_projection.chunk_id,
+                projection=second_projection,
+                hit_sources=("step_back_vector", "hyde_vector"),
+                rank_step_back_vector=1,
+                rank_hyde_vector=1,
+                step_back_vector_score=0.84,
+                hyde_vector_score=0.82,
+            ),
+        )
+    )
+
+    assert scored[0].chunk_id == projection.chunk_id
+    assert scored[0].fused_rrf_score is not None
+    assert scored[1].chunk_id == second_projection.chunk_id
+    assert scored[0].fused_rrf_score > scored[1].fused_rrf_score
+
+
+def test_sub_query_retrieval_service_executes_four_routes_and_returns_independent_candidate_set() -> None:
+    bm25_candidate = build_candidate()
+    projection = bm25_candidate.projection
+    repository = RecordingRetrievalRepository(
+        (bm25_candidate,),
+        (VectorCandidate(projection=projection, score=0.91),),
+    )
+    service = SubQueryRetrievalService(repository=repository)
+
+    result = service.retrieve_for_sub_query(
+        sub_query_id="sq_1",
+        sub_query_text="为什么要给 chunk 打分？",
+        expansion=QueryExpansion(
+            query="为什么要给 chunk 打分？",
+            base_query="为什么要给 chunk 打分？",
+            step_back_query="chunk 质量治理的目的是什么？",
+            hyde_query="chunk 质量评分用于提升召回与上下文质量。",
+        ),
+        top_k=3,
+    )
+
+    assert result.sub_query_id == "sq_1"
+    assert result.sub_query_text == "为什么要给 chunk 打分？"
+    assert result.base_query == "为什么要给 chunk 打分？"
+    assert result.step_back_query == "chunk 质量治理的目的是什么？"
+    assert result.hyde_query == "chunk 质量评分用于提升召回与上下文质量。"
+    assert len(result.candidates) == 1
+    candidate = result.candidates[0]
+    assert candidate.chunk_id == projection.chunk_id
+    assert candidate.fused_rrf_score is not None
+    assert candidate.hit_sources == ("base_vector", "step_back_vector", "hyde_vector", "base_bm25")
+    assert repository.calls == [
+        ("bm25_only", "为什么要给 chunk 打分？", RetrievalFilters(), 3),
+        ("vector_only", "为什么要给 chunk 打分？", RetrievalFilters(), 3),
+        ("vector_only", "chunk 质量治理的目的是什么？", RetrievalFilters(), 3),
+        ("vector_only", "chunk 质量评分用于提升召回与上下文质量。", RetrievalFilters(), 3),
+    ]
 
 
 def test_retrieve_passes_strong_filters_to_repository() -> None:
