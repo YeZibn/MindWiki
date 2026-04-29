@@ -44,6 +44,20 @@ CREATE TABLE IF NOT EXISTS documents (
     deleted_at TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tag_name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS document_tags (
+    document_id UUID NOT NULL REFERENCES documents (id),
+    tag_id UUID NOT NULL REFERENCES tags (id),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (document_id, tag_id)
+);
+
 CREATE TABLE IF NOT EXISTS sections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents (id),
@@ -90,6 +104,15 @@ CREATE INDEX IF NOT EXISTS idx_documents_import_job_id
 
 CREATE INDEX IF NOT EXISTS idx_documents_status
     ON documents (status);
+
+CREATE INDEX IF NOT EXISTS idx_tags_tag_name
+    ON tags (tag_name);
+
+CREATE INDEX IF NOT EXISTS idx_document_tags_document_id
+    ON document_tags (document_id);
+
+CREATE INDEX IF NOT EXISTS idx_document_tags_tag_id
+    ON document_tags (tag_id);
 
 CREATE INDEX IF NOT EXISTS idx_sections_document_id
     ON sections (document_id);

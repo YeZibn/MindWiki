@@ -17,6 +17,191 @@
 
 ### 2026-04-29
 
+#### 记录 043：完成模块 06 任务 03，明确第一阶段 `time_range` 时间字段承接
+
+- 状态：已完成
+- 范围：完成模块 06 中“任务 03：明确并补第一阶段 `time_range` 时间字段承接”
+- 结果：
+  - 已正式确定模块 06 第一阶段的 `time_range` 承接字段为：
+    - `documents.imported_at`
+  - 已正式确定第一阶段 `time_range` 的语义为：
+    - 导入时间过滤
+    - 表示文档进入 MindWiki 的时间范围
+  - 已明确第一阶段当前不承诺以下时间语义：
+    - 文档原始创建时间
+    - 文档原始发布时间
+    - 事件发生时间
+    - 笔记内容中的业务时间
+  - 已确认采用 `documents.imported_at` 的原因：
+    - 当前数据库已存在该字段
+    - 无需新增新的时间抽取与解析链路
+    - 过滤行为稳定、可解释、可立即落地
+    - 不会阻塞后续模块 06 的 BM25 与统一检索接口实现
+  - 已确认第一阶段 `time_range` 的实现边界：
+    - 支持基于导入时间的范围过滤
+    - 文档说明中需明确这是“导入时间”，不是“文档原始时间”
+    - 若后续需要真实文档时间语义，应在后续模块中单独扩展字段与提取链路
+- 遗留问题：
+  - 当前尚未进入检索实现，因此 `time_range` 过滤逻辑本身会在后续任务中接入查询层
+  - 后续若希望支持更真实的文档时间语义，需要新字段和明确来源策略
+- 下一步：
+  - 进入模块 06 任务 04：补最小检索数据投影
+
+#### 记录 042：完成模块 06 任务 02，补标签真实落库与检索侧承接
+
+- 状态：已完成
+- 范围：完成模块 06 中“任务 02：补标签真实落库与检索侧承接”
+- 结果：
+  - 已更新 `scripts/init_local_db.sql`，新增：
+    - `tags`
+    - `document_tags`
+  - 已更新 `scripts/reset_local_db.sql`，补充标签相关表的清理顺序
+  - 已更新 `src/mindwiki/infrastructure/import_repository.py`，让 Markdown / PDF 导入成功后把 `request.tags` 真实写入：
+    - `tags.tag_name`
+    - `document_tags.document_id -> tag_id`
+  - 当前标签落库行为已收敛为：
+    - 标签按名称去重
+    - 同一文档与同一标签关系按 `(document_id, tag_id)` 去重
+    - 导入请求中的标签不再只停留在 `input_payload`
+    - 后续检索层已具备承接 `document_tags` 的正式数据基础
+  - 已扩展 `tests/test_cli.py` 中的 recording repository 断言，补充导入链路对标签持久化承接的回归保护
+- 验证结果：
+  - `python3 -m pytest tests/test_cli.py tests/test_llm_models.py tests/test_llm_provider.py tests/test_llm_service.py` 通过
+  - 当前共 `42` 个测试，全部通过
+- 遗留问题：
+  - 当前标签虽已真实落库，但检索侧尚未开始消费 `document_tags`
+  - 当前尚未补真实数据库级标签回查或本地验收脚本
+- 下一步：
+  - 进入模块 06 任务 03：明确并补第一阶段 `time_range` 时间字段承接
+
+#### 记录 041：调整模块 06 范围，将 `tags` 与 `time_range` 前置能力插入任务拆解
+
+- 状态：进行中
+- 范围：根据最新对齐结果，调整模块 06 的任务拆解，不再把 `tags` 过滤与 `time_range` 过滤完全后置，而是将其前置依赖显式纳入模块 06
+- 结果：
+  - 已确认模块 06 若希望支持：
+    - `tags` 过滤
+    - `time_range` 过滤
+    则必须先补对应前置能力，而不能直接在召回层做伪实现
+  - 已确认新的插入原则：
+    - `tags`：先补标签真实落库，再进入过滤与命中能力
+    - `time_range`：先明确第一阶段时间语义，再进入过滤实现
+  - 已确认模块 06 的任务拆解调整为：
+    - 任务 01：检索设计对接与当前数据结构差异修正
+    - 任务 02：补标签真实落库与检索侧承接
+    - 任务 03：明确并补第一阶段 `time_range` 时间字段承接
+    - 任务 04：补最小检索数据投影
+    - 任务 05：实现基础关键词 / BM25 召回 MVP
+    - 任务 06：实现统一 `chunk hit` 返回结构与最小过滤能力
+    - 任务 07：补本地验收脚本与 README 说明
+- 当前调整后的实现原则：
+  - `tags` 过滤不再跳过，而是先补真实数据基础后再做
+  - `time_range` 第一阶段不再悬空，而是要求先明确是否采用 `documents.imported_at` 作为正式承接字段
+  - 模块 06 仍然只承接 `Step 8` 的基础召回层，不跨入 `Step 9`
+- 遗留问题：
+  - `time_range` 第一阶段是否最终采用 `documents.imported_at`，仍需在具体任务中明确写入
+- 下一步：
+  - 进入模块 06 任务 02：补标签真实落库与检索侧承接
+
+#### 记录 040：完成模块 06 任务 01，检索设计对接与当前数据结构差异修正
+
+- 状态：已完成
+- 范围：完成模块 06 中“任务 01：检索设计对接与当前数据结构差异修正”
+- 结果：
+  - 已对照 `Step 8.1 / 8.4 / 8.5 / 8.6` 与当前数据库结构、导入落库逻辑完成第一轮对接
+  - 已确认当前实现与 `Step 8` 一致的基础部分：
+    - 检索主对象可统一收敛为 `chunk`
+    - 当前已具备 `documents / sections / chunks / sources` 四层最小关联结构
+    - `document_title` 可由 `documents.title` 承接
+    - `section_title` 可由 `sections.title` 承接
+    - `chunk_text` 可由 `chunks.content_text` 承接
+    - `source_type` 可由 `documents.document_type` 或 `sources.source_type` 承接
+    - `document_scope` 过滤具备可落地数据基础
+    - `source_types` 过滤具备可落地数据基础
+    - PDF 已具备最小 `page_number` 定位承接
+  - 已确认当前实现与 `Step 8` 存在的主要差异：
+    - `document_tags` 尚未真实落库，因此本模块第一阶段不能把 `tags` 过滤或 `document_tags` 命中当作已实现能力
+    - 当前没有任何 embedding 数据、向量索引或版本管理能力，因此 `vector_only / hybrid` 暂不能进入模块 06 的真实交付范围
+    - 当前没有 `bm25_score / vector_score / rrf_score` 等分数字段承接，因此 `score_breakdown` 第一阶段只能先保留最小兼容位
+    - Markdown 仍未落 `line_start / line_end`，因此 `location` 目前只能先提供最小版本：
+      - Markdown：先保留 `section_id / chunk_index`
+      - PDF：可额外提供 `page_number`
+    - `time_range` 目前只有 `documents.imported_at` 可作为近似字段，尚未有更明确的文档时间语义来源
+  - 基于上述对齐，已确认模块 06 第一阶段的实现边界：
+    - 优先实现：
+      - 标签真实落库与检索侧承接
+      - 第一阶段 `time_range` 字段语义收敛
+      - 基础关键词 / BM25 召回
+      - 统一 `chunk hit` 返回结构
+      - `source_types` 过滤
+      - `document_scope` 过滤
+      - 最小 `location` 承接
+    - 暂不承诺：
+      - `vector_only`
+      - `hybrid`
+      - 完整 `score_breakdown`
+      - query planning / rerank / context builder
+  - 已确认模块 06 当前建议返回字段可先收敛为：
+    - `chunk_id`
+    - `document_id`
+    - `section_id`
+    - `document_title`
+    - `section_title`
+    - `chunk_text`
+    - `source_type`
+    - `location`
+    - `score`
+    - `match_sources`
+- 设计对接结论：
+  - `8.1` 的“统一以 chunk 为主对象”可以直接承接
+  - `8.4` 中 `document_title / section_title / chunk_text` 的命中能力可先落，`document_tags` 暂不进入
+  - `8.5` 的统一接口可以先做 `bm25_only` 的最小实现，并把 `retrieval_mode` 其余分支留待后续模块
+  - `8.6` 的“召回前过滤”原则可以先在 `source_types / document_scope` 上落地
+- 遗留问题：
+  - `tags` 过滤已决定纳入模块 06，但需先补标签真实落库
+  - `time_range` 已决定纳入模块 06，但需先明确第一阶段时间语义
+  - 若后续希望支持 `hybrid`，仍需先补 embedding、向量存储与召回路径
+  - 若后续希望支持更细粒度 citation `location`，仍需补 Markdown 行号级定位
+- 下一步：
+  - 进入模块 06 任务 02：补标签真实落库与检索侧承接
+
+#### 记录 039：确定模块 06 为基础检索与候选召回 MVP
+
+- 状态：进行中
+- 范围：将下一个开发模块正式定义为“基础检索与候选召回 MVP”，优先承接 `Step 8` 的基础召回层，不把 `Step 9` 的检索编排一次性并入同一模块
+- 结果：
+  - 已确认模块 06 的核心目标是先把“稳定召回 chunk 候选”这件事落地
+  - 已确认模块 06 当前阶段不直接进入：
+    - query decomposition
+    - step-back
+    - HyDE
+    - sub-query merge
+    - LLM rerank
+    - context builder
+    - citation payload
+  - 已确认模块 06 主要覆盖范围：
+    - 对齐 `Step 8` 与当前数据结构差异
+    - 补最小检索数据投影
+    - 实现基础关键词 / BM25 召回 MVP
+    - 实现统一 `chunk hit` 返回结构
+    - 实现最小过滤能力
+    - 补本地验收脚本与 README 说明
+    - 为后续模块 07 的 `Step 9` 编排层预留接口
+  - 已确认模块拆分原则：
+    - 模块 06 负责“召回”
+    - 模块 07 再负责“编排与 LLM 检索增强”
+- 当前边界判断：
+  - `Step 9` 依赖 `Step 8` 先有稳定候选集
+  - 当前虽然已完成 LLM 模块，但检索主链路仍未真实落地
+  - 因此下一步应先完成基础检索层，而不是直接进入编排层
+- 遗留问题：
+  - `tags` 过滤是否进入模块 06，仍取决于是否先补标签真实落库
+  - 若不补标签落库，本模块第一阶段应先只做 `source_types / document_scope` 等可稳定落地的过滤条件
+- 下一步：
+  - 开始模块 06 任务 01：检索设计对接与当前数据结构差异修正
+
+### 2026-04-29
+
 #### 记录 038：完成模块 05 任务 07，补 README、本地配置说明与验收脚本
 
 - 状态：已完成
@@ -1420,3 +1605,15 @@
 | 05 | 补调用生命周期控制与失败处理 | 已完成 | 已完成 retry / deadline / fallback / attempt_id |
 | 06 | 补结构化输出校验与返回约定 | 已完成 | 已完成本地 JSON 解析、最小 schema 校验与问题回传 |
 | 07 | 补 README、本地配置说明与验收脚本 | 已完成 | 已完成 LLM 本地验收脚本与文档闭环 |
+
+### 模块 06：基础检索与候选召回 MVP
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 检索设计对接与当前数据结构差异修正 | 已完成 | 已收敛 chunk 主对象、可实现过滤与当前差异清单 |
+| 02 | 补标签真实落库与检索侧承接 | 已完成 | 已完成 `tags / document_tags` 表与导入写入链路 |
+| 03 | 明确并补第一阶段 `time_range` 时间字段承接 | 已完成 | 已确定第一阶段统一按 `documents.imported_at` 承接 |
+| 04 | 补最小检索数据投影 | 未开始 | 为召回层准备稳定的查询字段与返回字段 |
+| 05 | 实现基础关键词 / BM25 召回 MVP | 未开始 | 先完成最小可用召回，不直接进入 hybrid |
+| 06 | 实现统一 `chunk hit` 返回结构与最小过滤能力 | 未开始 | 对齐返回结构，并覆盖 `source_types / document_scope / tags / time_range` |
+| 07 | 补本地验收脚本与 README 说明 | 未开始 | 支撑真实回归验证 |

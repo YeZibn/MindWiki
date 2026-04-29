@@ -138,6 +138,11 @@ class PostgresImportRepository:
                     document_id=document_id,
                     parsed=parsed,
                 )
+                self._insert_document_tags(
+                    cursor,
+                    document_id=document_id,
+                    tags=request.tags,
+                )
             connection.commit()
 
         return PersistedImportResult(
@@ -181,6 +186,11 @@ class PostgresImportRepository:
                     cursor,
                     document_id=document_id,
                     parsed=parsed,
+                )
+                self._insert_document_tags(
+                    cursor,
+                    document_id=document_id,
+                    tags=request.tags,
                 )
             connection.commit()
 
@@ -589,6 +599,41 @@ class PostgresImportRepository:
         )
         row = cursor.fetchone()
         return row["id"]
+
+    @staticmethod
+    def _insert_document_tags(
+        cursor: psycopg.Cursor[dict],
+        *,
+        document_id: UUID,
+        tags: tuple[str, ...],
+    ) -> None:
+        for raw_tag in tags:
+            normalized_tag = raw_tag.strip()
+            if not normalized_tag:
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO tags (tag_name)
+                VALUES (%s)
+                ON CONFLICT (tag_name)
+                DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+                RETURNING id
+                """,
+                (normalized_tag,),
+            )
+            tag_row = cursor.fetchone()
+            tag_id = tag_row["id"]
+
+            cursor.execute(
+                """
+                INSERT INTO document_tags (document_id, tag_id)
+                VALUES (%s, %s)
+                ON CONFLICT (document_id, tag_id)
+                DO NOTHING
+                """,
+                (document_id, tag_id),
+            )
 
     @staticmethod
     def _insert_sections_and_chunks(

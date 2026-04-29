@@ -234,6 +234,7 @@ def test_import_file_persists_pdf_when_repository_is_available(tmp_path: Path) -
     assert repository.last_pdf_parsed.page_count == 1
     assert repository.created_job_type == ".pdf"
     assert repository.persisted_pdf_import_job_ids == ["00000000-0000-0000-0000-000000000001"]
+    assert repository.persisted_document_tags["00000000-0000-0000-0000-000000000001"] == ("work",)
     assert repository.status_updates == [
         ("00000000-0000-0000-0000-000000000001", "running", None),
         ("00000000-0000-0000-0000-000000000001", "success", None),
@@ -522,6 +523,7 @@ def test_import_file_persists_markdown_when_repository_is_available(tmp_path: Pa
     assert repository.last_parsed is not None
     assert repository.last_parsed.title_candidates[0].value == "Notes"
     assert repository.created_job_type == ".md"
+    assert repository.persisted_document_tags["00000000-0000-0000-0000-000000000001"] == ("work",)
     assert repository.status_updates == [
         ("00000000-0000-0000-0000-000000000001", "running", None),
         ("00000000-0000-0000-0000-000000000001", "success", None),
@@ -561,6 +563,7 @@ class RecordingImportRepository:
         self.status_updates: list[tuple[str, str, str | None]] = []
         self.persisted_import_job_ids: list[str] = []
         self.persisted_pdf_import_job_ids: list[str] = []
+        self.persisted_document_tags: dict[str, tuple[str, ...]] = {}
         self.last_directory_execution_summary: dict[str, int] | None = None
 
     def create_directory_import_jobs(
@@ -671,6 +674,7 @@ class RecordingImportRepository:
         self.last_request = request
         self.last_parsed = parsed
         self.persisted_import_job_ids.append(str(import_job_id))
+        self.persisted_document_tags[str(import_job_id)] = request.tags
         return PersistedImportResult(
             import_job_id=import_job_id,
             source_id=UUID("00000000-0000-0000-0000-000000000002"),
@@ -688,6 +692,7 @@ class RecordingImportRepository:
         self.last_request = request
         self.last_pdf_parsed = parsed
         self.persisted_pdf_import_job_ids.append(str(import_job_id))
+        self.persisted_document_tags[str(import_job_id)] = request.tags
         return PersistedImportResult(
             import_job_id=import_job_id,
             source_id=UUID("00000000-0000-0000-0000-000000000002"),
