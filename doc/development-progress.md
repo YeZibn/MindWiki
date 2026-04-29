@@ -17,6 +17,44 @@
 
 ### 2026-04-29
 
+#### 记录 038：完成模块 05 任务 07，补 README、本地配置说明与验收脚本
+
+- 状态：已完成
+- 范围：完成模块 05 中“任务 07：补 README、本地配置说明与验收脚本”
+- 结果：
+  - 已新增 `scripts/verify_local_llm.py`
+  - 已为 LLM 模块补充第一版本地验收脚本能力：
+    - 支持读取 `LLM_BASE_URL`
+    - 支持读取 `LLM_API_KEY`
+    - 支持读取 `LLM_MODEL_ID`
+    - 支持通过命令行参数覆盖配置
+    - 通过真实 `generate_text` 调用执行 smoke test
+    - 校验返回文本是否为 `MINDWIKI_LLM_OK`
+    - 输出统一 JSON 摘要，包含 `status / model / usage / validation / error`
+  - 已更新 `README.md`，补充：
+    - 当前 LLM 模块能力边界
+    - `LLM_*` 配置项说明
+    - `generate_text` 最小使用示例
+    - LLM 本地验收命令
+  - 已更新 `scripts/README.md`，补充 `verify_local_llm.py` 的脚本说明
+  - 当前模块 05 已具备从配置、provider、service、生命周期控制、结构化校验到本地验收脚本的最小闭环
+- 验证结果：
+  - `python3 -m pytest tests/test_llm_service.py tests/test_llm_provider.py tests/test_llm_models.py tests/test_cli.py` 通过
+  - `python3 -m py_compile scripts/verify_local_llm.py` 通过
+  - 真实执行 `PYTHONPATH=src python3 scripts/verify_local_llm.py --base-url https://kuaipao.ai/v1 --api-key <masked> --model gpt-5.4` 成功
+  - 本次真实返回：
+    - `status = success`
+    - `model = gpt-5.4`
+    - `output_text = MINDWIKI_LLM_OK`
+    - `finish_reason = stop`
+    - `usage.total_tokens = 55`
+- 遗留问题：
+  - 当前仍未实现 citation validation
+  - 当前仍未实现结构化 repair 重试
+  - 当前 LLM 能力还仅覆盖 `generate_text`
+- 下一步：
+  - 模块 05 已完成，可进入下一开发模块讨论
+
 #### 记录 037：完成模块 05 任务 06，补结构化输出校验与返回约定
 
 - 状态：已完成
@@ -1381,4 +1419,4 @@
 | 04 | 实现 `generate_text` 最小可用链路 | 已完成 | 已完成 service 入口并通过真实网关 smoke test |
 | 05 | 补调用生命周期控制与失败处理 | 已完成 | 已完成 retry / deadline / fallback / attempt_id |
 | 06 | 补结构化输出校验与返回约定 | 已完成 | 已完成本地 JSON 解析、最小 schema 校验与问题回传 |
-| 07 | 补 README、本地配置说明与验收脚本 | 未开始 | 支撑真实本地联调与回归验证 |
+| 07 | 补 README、本地配置说明与验收脚本 | 已完成 | 已完成 LLM 本地验收脚本与文档闭环 |

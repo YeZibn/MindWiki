@@ -5,7 +5,7 @@ MindWiki is a personal knowledge base RAG project.
 ## Current Stage
 
 The repository is in the early development stage.
-The first implementation target is a minimal ingestion MVP focused on Markdown single-file import.
+The current implementation focus is a minimal ingestion plus LLM integration MVP.
 
 ## Local Development
 
@@ -19,6 +19,7 @@ Common commands:
 ```bash
 uv sync
 uv run mindwiki --help
+PYTHONPATH=src python3 -m pytest
 ```
 
 ## CLI Usage
@@ -30,6 +31,10 @@ PYTHONPATH=src python3 -m mindwiki --help
 PYTHONPATH=src python3 -m mindwiki import file --help
 PYTHONPATH=src python3 -m mindwiki import dir --help
 ```
+
+Current non-CLI integration entrypoint:
+
+- `src/mindwiki/llm/service.py` exposes the first `generate_text` service entrypoint for OpenAI-compatible LLM calls
 
 Single-file import:
 
@@ -72,6 +77,51 @@ Current limitation:
 - `.pdf` directory execution currently only supports copyable-text PDFs
 - if `MINDWIKI_DATABASE_URL` is missing, persistence is skipped and the CLI will report `reason=database_url_missing`
 - PDF OCR and more advanced PDF processing will be added in later development tasks
+- LLM integration currently exposes only the `generate_text` capability
+- structured output handling currently supports minimal local JSON parsing and lightweight schema checks
+- citation validation and repair retries are not implemented yet
+
+## LLM Setup
+
+The project now supports a minimal OpenAI-compatible LLM integration.
+
+Required environment variables:
+
+```bash
+LLM_BASE_URL=https://kuaipao.ai/v1
+LLM_API_KEY=your-api-key
+LLM_MODEL_ID=gpt-5.4
+LLM_MODEL_MINI_ID=gpt-5.4-mini
+LLM_TIMEOUT_MS=30000
+```
+
+Current LLM behavior:
+
+- `build_llm_service()` reads LLM settings from `.env` or the shell environment
+- `generate_text` builds `system + user` messages and sends them through `/chat/completions`
+- retry is only used for retryable failures
+- fallback can switch from `LLM_MODEL_ID` to `LLM_MODEL_MINI_ID`
+- structured outputs can be parsed locally when `response_format.type=json_schema`
+- local schema validation currently checks JSON parseability, required fields, and basic types
+
+Minimal `generate_text` example:
+
+```python
+from mindwiki.llm.service import GenerateTextInput, build_llm_service
+
+service = build_llm_service()
+response = service.generate_text(
+    GenerateTextInput(
+        system_prompt="You are a concise assistant. Reply with plain text only.",
+        user_prompt="Reply with exactly: MINDWIKI_LLM_OK",
+        task_type="smoke_test",
+        max_tokens=32,
+    )
+)
+
+print(response.status)
+print(response.output_text)
+```
 
 PostgreSQL persistence setup:
 
@@ -104,6 +154,7 @@ Minimal end-to-end verification:
 ```bash
 PYTHONPATH=src python3 scripts/verify_local_import.py
 PYTHONPATH=src python3 scripts/verify_local_directory_import.py
+PYTHONPATH=src python3 scripts/verify_local_llm.py
 ```
 
 The verification script will:
@@ -123,6 +174,13 @@ The directory verification script will:
 - query child jobs for the generated `batch_job_id`
 - verify the parent directory job payload contains `execution_summary`
 - verify that the PDF child job is executed through the real PDF import path
+
+The LLM verification script will:
+
+- read `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL_ID` from `.env` or the shell
+- run one real `generate_text` smoke test against the configured gateway
+- expect the exact response `MINDWIKI_LLM_OK`
+- print a JSON summary including `status`, `model`, `usage`, and normalized `error` fields
 
 Current status conventions:
 

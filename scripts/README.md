@@ -8,3 +8,4 @@ Current scope:
 - `reset_local_db.sql`: drop the local PostgreSQL schema objects for rebuilding
 - `verify_local_import.py`: run a minimal end-to-end Markdown import verification against the local PostgreSQL database
 - `verify_local_directory_import.py`: run a minimal end-to-end directory import verification against the local PostgreSQL database, including Markdown/PDF child job execution outcomes and parent job execution summary checks
+- `verify_local_llm.py`: run a minimal end-to-end `generate_text` verification against the configured OpenAI-compatible LLM gateway
