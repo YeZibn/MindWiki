@@ -26,6 +26,16 @@ class RetrievalFilters:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievalQuery:
+    """Unified retrieval query input for the first retrieval stage."""
+
+    query: str
+    filters: RetrievalFilters = field(default_factory=RetrievalFilters)
+    top_k: int = 10
+    retrieval_mode: str = "bm25_only"
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""
 
@@ -49,3 +59,12 @@ class ChunkProjection:
     document_type: str
     document_tags: tuple[str, ...] = field(default_factory=tuple)
     location: ChunkLocation = field(default_factory=lambda: ChunkLocation(chunk_index=0))
+
+
+@dataclass(frozen=True, slots=True)
+class BM25Candidate:
+    """Minimal scored retrieval candidate for the BM25 stage."""
+
+    projection: ChunkProjection
+    score: float
+    match_sources: tuple[str, ...] = field(default_factory=tuple)

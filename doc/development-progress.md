@@ -17,6 +17,58 @@
 
 ### 2026-04-29
 
+#### 记录 045：完成模块 06 任务 05，实现基础关键词 / BM25 召回 MVP
+
+- 状态：已完成
+- 范围：完成模块 06 中“任务 05：实现基础关键词 / BM25 召回 MVP”
+- 结果：
+  - 已扩展 `src/mindwiki/application/retrieval_models.py`
+  - 已新增第一版检索输入与候选模型：
+    - `RetrievalQuery`
+    - `BM25Candidate`
+  - 已扩展 `src/mindwiki/infrastructure/retrieval_repository.py`
+  - 已建立第一版 PostgreSQL 原生全文检索 BM25 MVP 能力：
+    - `search_bm25()`
+    - `build_bm25_query()`
+  - 当前 BM25 MVP 已采用 PostgreSQL 原生全文检索承接关键词召回：
+    - 使用 `websearch_to_tsquery('simple', query)`
+    - 使用 `ts_rank_cd(...)` 作为基础相关性分数
+    - 在查询层直接完成 `bm25_score > 0` 过滤
+  - 当前已按 `Step 8.4` 的优先级承接加权字段：
+    - `document_title` -> `A`
+    - `section_title` -> `B`
+    - `document_tags` -> `C`
+    - `chunk_text` -> `D`
+  - 当前已建立最小 `match_sources` 承接基础：
+    - `document_title`
+    - `section_title`
+    - `document_tags`
+    - `chunk_text`
+  - 当前 BM25 查询已复用前置强过滤能力：
+    - `source_types`
+    - `document_scope`
+    - `tags`
+    - `time_range`
+  - 当前实现边界仍保持收敛：
+    - 尚未进入 `vector_only`
+    - 尚未进入 `hybrid`
+    - 尚未实现完整 `chunk hit` 返回对象
+    - 尚未引入更复杂的融合或重排逻辑
+  - 已扩展 `tests/test_retrieval_projection.py`，覆盖：
+    - BM25 查询中的加权 `tsvector`
+    - `websearch_to_tsquery` 使用
+    - `bm25_score` 过滤与排序
+    - 前置过滤参数与 BM25 参数的联合组装
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_projection.py tests/test_cli.py tests/test_llm_models.py tests/test_llm_provider.py tests/test_llm_service.py` 通过
+  - 当前共 `46` 个测试，全部通过
+- 遗留问题：
+  - 当前 BM25 候选尚未被统一包装成正式 `chunk hit`
+  - 当前还没有上层检索 service 对 `search_bm25()` 的调用封装
+  - 当前还没有本地检索验收脚本
+- 下一步：
+  - 进入模块 06 任务 06：实现统一 `chunk hit` 返回结构与最小过滤能力
+
 #### 记录 044：完成模块 06 任务 04，补最小检索数据投影
 
 - 状态：已完成
@@ -1667,6 +1719,6 @@
 | 02 | 补标签真实落库与检索侧承接 | 已完成 | 已完成 `tags / document_tags` 表与导入写入链路 |
 | 03 | 明确并补第一阶段 `time_range` 时间字段承接 | 已完成 | 已确定第一阶段统一按 `documents.imported_at` 承接 |
 | 04 | 补最小检索数据投影 | 已完成 | 已完成投影模型、过滤模型和 PostgreSQL 投影仓储 |
-| 05 | 实现基础关键词 / BM25 召回 MVP | 未开始 | 先完成最小可用召回，不直接进入 hybrid |
+| 05 | 实现基础关键词 / BM25 召回 MVP | 已完成 | 已完成 PostgreSQL 原生全文检索与基础权重承接 |
 | 06 | 实现统一 `chunk hit` 返回结构与最小过滤能力 | 未开始 | 对齐返回结构，并覆盖 `source_types / document_scope / tags / time_range` |
 | 07 | 补本地验收脚本与 README 说明 | 未开始 | 支撑真实回归验证 |
