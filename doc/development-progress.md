@@ -17,6 +17,59 @@
 
 ### 2026-04-29
 
+#### 记录 075：完成模块 10 任务 05，补本地验收脚本、README 与运行说明
+
+- 状态：已完成
+- 范围：完成模块 10 中“任务 05：补本地验收脚本、README 与运行说明”，为 `Step 09` 后半段 `rerank / context builder / citation payload` 提供真实本地验收入口与文档说明
+- 结果：
+  - 已新增：
+    - `scripts/verify_local_step09_full_orchestration.py`
+  - 当前本地验收脚本已串起完整 `Step 09` 第一阶段闭环：
+    - query decomposition
+    - fixed query expansion
+    - per-sub-query four-route retrieval merge
+    - per-sub-query rerank
+    - context builder
+    - citation payload
+  - 已更新 `README.md`，补充：
+    - `subquery_rerank_service / context_builder_service / citation_payload_service` 入口说明
+    - `LLM_RERANK_*` 环境变量说明
+    - `Step 09` 全链路最小示例
+    - `Step 09` 全链路本地验收命令
+  - 已更新 `scripts/README.md`，补充 `verify_local_step09_full_orchestration.py` 的脚本说明
+  - 已同步补齐本地环境中的 rerank 配置：
+    - `LLM_RERANK_BASE_URL`
+    - `LLM_RERANK_API_KEY`
+    - `LLM_RERANK_MODEL_ID`
+- 验证结果：
+  - `python3 -m py_compile scripts/verify_local_step09_full_orchestration.py src/mindwiki/application/citation_payload_service.py src/mindwiki/application/context_builder_service.py src/mindwiki/application/subquery_rerank_service.py src/mindwiki/llm/rerank_service.py src/mindwiki/llm/rerank_models.py` 通过
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_llm_models.py tests/test_llm_provider.py` 通过
+  - 已完成一次真实本地 `Step 09` 全链路验收脚本执行
+  - 当前真实返回已确认：
+    - `decomposition_mode = decompose`
+    - `rerank_result_count = 2`
+    - `context_section_count = 2`
+    - `citation_count = 4`
+    - 每个 `sub-query` 都成功返回：
+      - reranked `top 5`
+      - context evidence items
+      - citation payload
+- 当前实现边界：
+  - 模块 10 已完成 `Step 09.4-9.6` 第一阶段闭环
+  - 当前尚未进入：
+    - `Step 10` 回答生成
+    - 前端展示格式深化
+  - 当前 `match_sources` 在 citation payload 中仍是最小承接
+- 遗留问题：
+  - 当前真实本地全链路仍依赖：
+    - 外部 LLM 网关
+    - 外部 rerank 网关
+    - 外部 embedding 网关
+    - 本地 `Milvus`
+  - 当前 citation payload 还没有和后续回答层 schema 做最终一体化联调
+- 下一步：
+  - 模块 10 已完成，可进入下一开发模块讨论
+
 #### 记录 074：完成模块 10 任务 04，实现 citation payload
 
 - 状态：已完成
@@ -3281,4 +3334,4 @@
 | 02 | 实现子任务级 rerank 通道 | 已完成 | 已完成独立 rerank 协议、service、provider 与 `top 5` 应用层承接 |
 | 03 | 实现 context builder | 已完成 | 已完成分段结构、前 `2` 条证据承接与连续 chunk 最小合并 |
 | 04 | 实现 citation payload | 已完成 | 已完成从 context sections 到统一 citation payload 的最小转换链路 |
-| 05 | 补本地验收脚本、README 与运行说明 | 进行中 | 固化 `Step 09` 完整闭环验收入口 |
+| 05 | 补本地验收脚本、README 与运行说明 | 已完成 | 已完成 `Step 09` 全链路本地验收脚本与文档闭环 |

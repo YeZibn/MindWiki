@@ -40,6 +40,9 @@ Current non-CLI integration entrypoint:
 - `src/mindwiki/application/query_decomposition_service.py` exposes the first `Step 09.1` query decomposition service entrypoint
 - `src/mindwiki/application/query_expansion_service.py` exposes the first `Step 09.2` fixed `base_query / step_back_query / hyde_query` expansion service entrypoint
 - `src/mindwiki/application/subquery_retrieval_service.py` exposes the first `Step 09.3` per-sub-query four-route retrieval merge entrypoint
+- `src/mindwiki/application/subquery_rerank_service.py` exposes the first `Step 09.4` per-sub-query rerank entrypoint
+- `src/mindwiki/application/context_builder_service.py` exposes the first `Step 09.5` context builder entrypoint
+- `src/mindwiki/application/citation_payload_service.py` exposes the first `Step 09.6` citation payload entrypoint
 
 Single-file import:
 
@@ -88,11 +91,14 @@ Current limitation:
 - structured output handling currently supports minimal local JSON parsing and lightweight schema checks
 - citation validation and repair retries are not implemented yet
 - retrieval currently supports `bm25_only`, `vector_only`, and `hybrid`
-- Step 09 currently implements only the front half:
+- Step 09 now implements the full first-stage orchestration chain:
   - query decomposition
   - fixed query expansion
   - per-sub-query four-route retrieval merge
-- rerank, context builder, citation payload, and Step 10 generation are not implemented yet
+  - per-sub-query rerank
+  - context builder
+  - citation payload
+- Step 10 generation is not implemented yet
 
 ## LLM Setup
 
@@ -106,6 +112,10 @@ LLM_API_KEY=your-api-key
 LLM_MODEL_ID=gpt-5.4
 LLM_MODEL_MINI_ID=gpt-5.4-mini
 LLM_TIMEOUT_MS=30000
+LLM_RERANK_BASE_URL=https://api.siliconflow.cn/v1
+LLM_RERANK_API_KEY=your-rerank-api-key
+LLM_RERANK_MODEL_ID=Qwen/Qwen3-Reranker-8B
+LLM_RERANK_TIMEOUT_MS=30000
 LLM_EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
 LLM_EMBEDDING_API_KEY=your-embedding-api-key
 LLM_EMBEDDING_MODEL_ID=Qwen/Qwen3-Embedding-8B
@@ -118,8 +128,10 @@ MILVUS_COLLECTION_NAME=mindwiki_chunks
 Current LLM behavior:
 
 - `build_llm_service()` reads LLM settings from `.env` or the shell environment
+- `build_rerank_service()` reads rerank settings from `.env` or the shell environment
 - `build_embedding_service()` reads embedding settings from `.env` or the shell environment
 - `generate_text` builds `system + user` messages and sends them through `/chat/completions`
+- rerank execution sends query + candidate documents through `/rerank`
 - embedding generation sends chunk text batches through `/embeddings`
 - retry is only used for retryable failures
 - fallback can switch from `LLM_MODEL_ID` to `LLM_MODEL_MINI_ID`
@@ -278,6 +290,46 @@ Local Step 09 front-half verification command:
 
 ```bash
 PYTHONPATH=src /opt/miniconda3/bin/python3 scripts/verify_local_step09_orchestration.py
+```
+
+Minimal Step 09 full orchestration example:
+
+```python
+from mindwiki.application.citation_payload_service import CitationPayloadService
+from mindwiki.application.context_builder_service import ContextBuilderService
+from mindwiki.application.query_decomposition_service import QueryDecompositionService
+from mindwiki.application.query_expansion_service import build_query_expansion_service
+from mindwiki.application.subquery_rerank_service import build_subquery_rerank_service
+from mindwiki.application.subquery_retrieval_service import SubQueryRetrievalService
+
+decomposition = QueryDecompositionService().decompose("分别总结 Step 8 和 Step 9 的职责")
+expansion_service = build_query_expansion_service()
+retrieval_service = SubQueryRetrievalService()
+rerank_service = build_subquery_rerank_service()
+context_builder = ContextBuilderService()
+citation_service = CitationPayloadService()
+
+rerank_results = []
+for index, sub_query in enumerate(decomposition.sub_queries, start=1):
+    expansion = expansion_service.expand(sub_query)
+    retrieval_result = retrieval_service.retrieve_for_sub_query(
+        sub_query_id=f"sq_{index}",
+        sub_query_text=sub_query,
+        expansion=expansion,
+        top_k=5,
+    )
+    rerank_results.append(rerank_service.rerank_sub_query(retrieval_result))
+
+context_result = context_builder.build_context(tuple(rerank_results))
+citation_result = citation_service.build_citations(context_result)
+
+print(len(context_result.sections), len(citation_result.citations))
+```
+
+Local Step 09 full orchestration verification command:
+
+```bash
+PYTHONPATH=src /opt/miniconda3/bin/python3 scripts/verify_local_step09_full_orchestration.py
 ```
 
 PostgreSQL persistence setup:
