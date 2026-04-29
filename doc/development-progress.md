@@ -17,6 +17,151 @@
 
 ### 2026-04-29
 
+#### 记录 057：完成模块 08 任务 02，扩展候选模型与融合中间结构
+
+- 状态：已完成
+- 范围：完成模块 08 中“任务 02：扩展候选模型与融合中间结构”
+- 结果：
+  - 已扩展 `src/mindwiki/application/retrieval_models.py`
+  - 已新增：
+    - `HybridCandidate`
+  - 当前 `HybridCandidate` 已能承接第一阶段混合检索融合前所需的中间字段：
+    - `chunk_id`
+    - `projection`
+    - `vector_hit`
+    - `bm25_hit`
+    - `vector_score`
+    - `bm25_score`
+    - `rank_vector`
+    - `rank_bm25`
+    - 以及后续任务 03 需要继续填充的：
+      - `rrf_score`
+      - `normalized_rrf_score`
+      - `normalized_vector_score`
+      - `normalized_bm25_score`
+      - `dual_hit_bonus`
+      - `final_score`
+  - 已扩展 `src/mindwiki/application/retrieval_service.py`
+  - 已新增纯内存候选合并逻辑：
+    - `merge_hybrid_candidates()`
+  - 当前合并逻辑已正式按 `chunk_id` 合并两路候选：
+    - `vector_candidates`
+    - `bm25_candidates`
+  - 当前合并逻辑的最小行为已收敛为：
+    - 记录双路是否命中
+    - 记录各自原始分数
+    - 记录各自通道 rank，且 rank 从 `1` 开始
+    - 为后续任务 03 的 `RRF + 加权融合` 提供稳定输入
+  - 当前实现边界保持收敛：
+    - 本任务只补中间结构与候选合并
+    - 尚未开始计算：
+      - `rrf_score`
+      - 各类归一化分数
+      - `dual_hit_bonus`
+      - `final_score`
+    - 尚未将 `hybrid` 真正接入 `RetrievalService.retrieve()`
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_retrieval_projection.py tests/test_embedding_service.py tests/test_vector_index_service.py tests/test_llm_provider.py tests/test_llm_service.py tests/test_cli.py tests/test_llm_models.py` 通过
+  - 当前共 `56` 个测试，全部通过
+  - 已新增测试覆盖：
+    - 双路命中按 `chunk_id` 合并
+    - 单路命中保留
+    - `rank_vector / rank_bm25` 的稳定记录
+- 遗留问题：
+  - 当前 `HybridCandidate` 仍未填充融合公式相关字段值
+  - 当前尚未定义 `normalized_*` 的边界处理实现
+  - 当前 `hybrid` 还不能对外提供真实检索结果
+- 下一步：
+  - 进入模块 08 任务 03：实现 `hybrid` 去重、RRF 与加权融合
+
+#### 记录 056：完成模块 08 任务 01，混合检索设计对接与当前代码差异修正
+
+- 状态：已完成
+- 范围：完成模块 08 中“任务 01：混合检索设计对接与当前代码差异修正”
+- 结果：
+  - 已对照 `Step 8.5 / 8.6 / 8.7 / 8.8` 与当前代码结构完成第一轮差异梳理
+  - 已确认当前实现与模块 08 目标一致的基础部分：
+    - 检索主对象仍统一为 `chunk`
+    - 当前已存在统一检索输入：
+      - `RetrievalQuery`
+      - `RetrievalFilters`
+    - 当前已存在统一检索输出：
+      - `ChunkHit`
+      - `RetrievalResult`
+    - 当前强过滤在两条单通道中都已具备可落地基础：
+      - `tags`
+      - `source_types`
+      - `document_scope`
+      - `time_range`
+    - 当前两条基础召回通道都已真实存在：
+      - `bm25_only`
+      - `vector_only`
+    - 当前统一检索 service 已具备承接第三种 `retrieval_mode = hybrid` 的稳定外壳
+  - 已确认当前实现与 `Step 8.5 / 8.6 / 8.7 / 8.8` 存在的主要差异：
+    - `RetrievalQuery.retrieval_mode` 当前默认值仍是：
+      - `bm25_only`
+      - 与设计稿中的默认 `hybrid` 尚未对齐
+    - 当前 `RetrievalService` 还没有：
+      - 同时执行 BM25 与向量召回
+      - 两路候选去重合并
+      - `hybrid` 最终排序
+    - 当前仓储层虽然分别具备：
+      - `search_bm25()`
+      - `search_vector()`
+      - 但尚未具备：
+        - 统一 `hybrid` 候选合并结构
+        - `rank_vector`
+        - `rank_bm25`
+        - 双路命中标记
+    - 当前统一返回结构中的 `score_breakdown` 只覆盖单通道最小值：
+      - `bm25_score`
+      - `vector_score`
+      - 尚未承接：
+        - `rrf_score`
+        - `normalized_rrf_score`
+        - `normalized_vector_score`
+        - `normalized_bm25_score`
+        - `dual_hit_bonus`
+        - `final_score`
+    - 当前尚未落实 `Step 8.6` 中建议的内部召回参数分层：
+      - `vector_top_k = 30`
+      - `bm25_top_k = 30`
+      - 现在两条单通道仍主要直接复用接口层 `top_k`
+    - 当前尚未落实 `Step 8.7` 中的：
+      - 按 `chunk_id` 合并候选
+      - `k = 60` 的 RRF 固定常数
+      - `0.50 / 0.20 / 0.20 / 0.10` 融合权重
+      - 同分打破规则
+    - 当前还没有 `Step 8.8` 要求的本地 `hybrid` 验收样例与固定验证脚本
+  - 已正式确认模块 08 第一阶段应按以下边界继续推进：
+    - 任务 02 负责补融合中间结构与候选合并字段
+    - 任务 03 负责实现 `RRF + 加权融合`
+    - 任务 04-05 再接入统一 service 与完整 `score_breakdown`
+    - 任务 06 最后补 `hybrid` 本地验收脚本与 README
+  - 已明确当前不应在模块 08 任务 01 中提前并入：
+    - rerank
+    - query decomposition
+    - step-back
+    - HyDE
+    - context builder
+    - Step 09 编排
+- 代码对接结论：
+  - `src/mindwiki/application/retrieval_models.py` 当前仍缺少专门承接两路合并与融合排序的中间结构
+  - `src/mindwiki/infrastructure/retrieval_repository.py` 目前只负责单通道查询，`hybrid` 不应简单拼接两路结果，而应引入显式融合步骤
+  - `src/mindwiki/application/retrieval_service.py` 当前是最合适承接 `hybrid` 编排的位置，但需要先有稳定的融合输入结构
+  - 当前 README 与脚本说明已经能够反映单通道现状，后续需在 `hybrid` 完成后同步更新
+- 遗留问题：
+  - `RetrievalQuery.retrieval_mode` 是否在模块 08 完成后立即改为默认 `hybrid`，还是先保留显式传参兼容期，需在任务 04 中收敛
+  - `normalized_*` 的全等值边界处理需在任务 03 中明确写成代码与测试
+  - 本地 `hybrid` 验收样例需兼顾：
+    - 标题词
+    - 标签词
+    - 正文词
+    - 语义改写
+    - 范围过滤
+- 下一步：
+  - 进入模块 08 任务 02：扩展候选模型与融合中间结构
+
 #### 记录 055：确定模块 08 为混合检索与融合排序 MVP
 
 - 状态：进行中

@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections import OrderedDict
 
-from mindwiki.application.retrieval_models import BM25Candidate, ChunkHit, RetrievalQuery, RetrievalResult, VectorCandidate
+from mindwiki.application.retrieval_models import (
+    BM25Candidate,
+    ChunkHit,
+    HybridCandidate,
+    RetrievalQuery,
+    RetrievalResult,
+    VectorCandidate,
+)
 from mindwiki.infrastructure.retrieval_repository import RetrievalRepository, build_retrieval_repository
 
 
@@ -84,3 +91,62 @@ class RetrievalService:
             match_sources=candidate.match_sources,
             score_breakdown={"vector_score": candidate.score},
         )
+
+
+def merge_hybrid_candidates(
+    bm25_candidates: tuple[BM25Candidate, ...],
+    vector_candidates: tuple[VectorCandidate, ...],
+) -> tuple[HybridCandidate, ...]:
+    """Merge two candidate lists by `chunk_id` without applying fusion scoring."""
+
+    merged: OrderedDict[str, HybridCandidate] = OrderedDict()
+
+    for rank, candidate in enumerate(vector_candidates, start=1):
+        chunk_id = str(candidate.projection.chunk_id)
+        existing = merged.get(chunk_id)
+        if existing is None:
+            merged[chunk_id] = HybridCandidate(
+                chunk_id=candidate.projection.chunk_id,
+                projection=candidate.projection,
+                vector_hit=True,
+                vector_score=candidate.score,
+                rank_vector=rank,
+            )
+            continue
+
+        merged[chunk_id] = HybridCandidate(
+            chunk_id=existing.chunk_id,
+            projection=existing.projection,
+            vector_hit=True,
+            bm25_hit=existing.bm25_hit,
+            vector_score=candidate.score,
+            bm25_score=existing.bm25_score,
+            rank_vector=rank,
+            rank_bm25=existing.rank_bm25,
+        )
+
+    for rank, candidate in enumerate(bm25_candidates, start=1):
+        chunk_id = str(candidate.projection.chunk_id)
+        existing = merged.get(chunk_id)
+        if existing is None:
+            merged[chunk_id] = HybridCandidate(
+                chunk_id=candidate.projection.chunk_id,
+                projection=candidate.projection,
+                bm25_hit=True,
+                bm25_score=candidate.score,
+                rank_bm25=rank,
+            )
+            continue
+
+        merged[chunk_id] = HybridCandidate(
+            chunk_id=existing.chunk_id,
+            projection=existing.projection,
+            vector_hit=existing.vector_hit,
+            bm25_hit=True,
+            vector_score=existing.vector_score,
+            bm25_score=candidate.score,
+            rank_vector=existing.rank_vector,
+            rank_bm25=rank,
+        )
+
+    return tuple(merged.values())

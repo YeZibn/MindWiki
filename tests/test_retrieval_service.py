@@ -7,11 +7,12 @@ from mindwiki.application.retrieval_models import (
     BM25Candidate,
     ChunkLocation,
     ChunkProjection,
+    HybridCandidate,
     RetrievalFilters,
     RetrievalQuery,
     VectorCandidate,
 )
-from mindwiki.application.retrieval_service import RetrievalService
+from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates
 
 
 class RecordingRetrievalRepository:
@@ -142,3 +143,99 @@ def test_retrieve_rejects_non_bm25_modes() -> None:
         assert "Unsupported retrieval_mode" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unsupported retrieval mode")
+
+
+def test_merge_hybrid_candidates_combines_dual_hit_candidates_by_chunk_id() -> None:
+    projection = build_candidate().projection
+    merged = merge_hybrid_candidates(
+        bm25_candidates=(
+            BM25Candidate(
+                projection=projection,
+                score=0.73,
+                match_sources=("section_title", "chunk_text"),
+            ),
+        ),
+        vector_candidates=(
+            VectorCandidate(
+                projection=projection,
+                score=0.91,
+            ),
+        ),
+    )
+
+    assert merged == (
+        HybridCandidate(
+            chunk_id=projection.chunk_id,
+            projection=projection,
+            vector_hit=True,
+            bm25_hit=True,
+            vector_score=0.91,
+            bm25_score=0.73,
+            rank_vector=1,
+            rank_bm25=1,
+        ),
+    )
+
+
+def test_merge_hybrid_candidates_preserves_single_channel_hits_and_ranks() -> None:
+    first_projection = build_candidate().projection
+    second_projection = ChunkProjection(
+        chunk_id=UUID("00000000-0000-0000-0000-000000000031"),
+        document_id=UUID("00000000-0000-0000-0000-000000000032"),
+        section_id=UUID("00000000-0000-0000-0000-000000000033"),
+        document_title="Semantic Notes",
+        section_title="Embeddings",
+        chunk_text="Vector retrieval handles semantic recall.",
+        source_type="markdown",
+        document_type="markdown",
+        document_tags=("vector",),
+        location=ChunkLocation(
+            chunk_index=2,
+            section_id=UUID("00000000-0000-0000-0000-000000000033"),
+            page_number=None,
+            imported_at=datetime(2026, 4, 29, 11, 0, 0),
+        ),
+    )
+
+    merged = merge_hybrid_candidates(
+        bm25_candidates=(
+            BM25Candidate(
+                projection=second_projection,
+                score=0.63,
+                match_sources=("chunk_text",),
+            ),
+        ),
+        vector_candidates=(
+            VectorCandidate(
+                projection=first_projection,
+                score=0.91,
+            ),
+            VectorCandidate(
+                projection=second_projection,
+                score=0.88,
+            ),
+        ),
+    )
+
+    assert merged == (
+        HybridCandidate(
+            chunk_id=first_projection.chunk_id,
+            projection=first_projection,
+            vector_hit=True,
+            bm25_hit=False,
+            vector_score=0.91,
+            bm25_score=None,
+            rank_vector=1,
+            rank_bm25=None,
+        ),
+        HybridCandidate(
+            chunk_id=second_projection.chunk_id,
+            projection=second_projection,
+            vector_hit=True,
+            bm25_hit=True,
+            vector_score=0.88,
+            bm25_score=0.63,
+            rank_vector=2,
+            rank_bm25=1,
+        ),
+    )

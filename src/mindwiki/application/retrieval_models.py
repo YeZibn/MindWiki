@@ -80,6 +80,26 @@ class VectorCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class HybridCandidate:
+    """Merged hybrid candidate before fusion scoring is applied."""
+
+    chunk_id: UUID
+    projection: ChunkProjection
+    vector_hit: bool = False
+    bm25_hit: bool = False
+    vector_score: float | None = None
+    bm25_score: float | None = None
+    rank_vector: int | None = None
+    rank_bm25: int | None = None
+    rrf_score: float | None = None
+    normalized_rrf_score: float | None = None
+    normalized_vector_score: float | None = None
+    normalized_bm25_score: float | None = None
+    dual_hit_bonus: float | None = None
+    final_score: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkHit:
     """Unified retrieval hit returned to upper layers."""
 
