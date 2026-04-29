@@ -17,6 +17,52 @@
 
 ### 2026-04-29
 
+#### 记录 065：完成模块 09 任务 03，建立固定三类查询扩展服务
+
+- 状态：已完成
+- 范围：完成模块 09 中“任务 03：实现固定三类查询扩展”，对原 query 或每个 `sub-query` 建立固定 `base_query / step_back_query / hyde_query` 输出结构
+- 结果：
+  - 已在 `src/mindwiki/application/retrieval_models.py` 中新增：
+    - `QueryExpansion`
+  - 已新增 `src/mindwiki/application/query_expansion_service.py`
+  - 已建立模块 09 第一阶段固定扩展输出结构：
+    - `base_query`
+    - `step_back_query`
+    - `hyde_query`
+    - `use_step_back`
+    - `use_hyde`
+  - 当前 `QueryExpansionService.expand()` 已按模块 09 设计落地最小实现：
+    - `base_query` 直接保留当前检索单元
+    - `step_back_query` 通过现有 LLM service 生成
+    - `hyde_query` 通过现有 LLM service 生成
+  - 当前已通过结构化 JSON schema 约束 LLM 输出：
+    - `step_back_query`
+    - `hyde_query`
+  - 当前已明确第一阶段行为：
+    - 每个检索单元固定只生成 `1` 条 `step_back_query`
+    - 每个检索单元固定只生成 `1` 条 `hyde_query`
+    - 默认：
+      - `use_step_back = true`
+      - `use_hyde = true`
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py` 通过
+  - 当前检索相关测试共 `17` 个，全部通过
+  - 已新增测试覆盖：
+    - 固定扩展正常生成 `base_query / step_back_query / hyde_query`
+    - LLM 扩展失败时抛出错误，避免静默回落为不可信扩展
+- 当前实现边界：
+  - 本任务只完成 `9.2` 固定三类扩展服务
+  - 当前尚未进入：
+    - `9.3` 单个 `sub-query` 四路结果归并
+    - `9.4` 子任务级 rerank
+    - `9.5` context builder
+  - 当前扩展服务仍是独立能力，下一步需要接入统一检索编排层
+- 遗留问题：
+  - 当前 `step_back_query` 与 `hyde_query` 还未进入真实召回执行链路
+  - 当前尚未建立“一个 `sub-query` 输出一组独立候选集”的编排结果结构
+- 下一步：
+  - 进入模块 09 任务 04：实现单个 `sub-query` 内部 4 路结果归并
+
 #### 记录 064：完成模块 09 任务 02，建立 query decomposition 协议与规则优先最小实现
 
 - 状态：已完成

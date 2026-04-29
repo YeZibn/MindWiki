@@ -46,6 +46,18 @@ class QueryDecomposition:
 
 
 @dataclass(frozen=True, slots=True)
+class QueryExpansion:
+    """First-stage fixed query expansion payload for one retrieval unit."""
+
+    query: str
+    base_query: str
+    step_back_query: str
+    hyde_query: str
+    use_step_back: bool = True
+    use_hyde: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""
 

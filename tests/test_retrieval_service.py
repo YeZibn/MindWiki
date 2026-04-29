@@ -11,12 +11,15 @@ from mindwiki.application.retrieval_models import (
     ChunkProjection,
     HybridCandidate,
     QueryDecomposition,
+    QueryExpansion,
     RetrievalFilters,
     RetrievalQuery,
     VectorCandidate,
 )
 from mindwiki.application.query_decomposition_service import QueryDecompositionService
+from mindwiki.application.query_expansion_service import QueryExpansionService
 from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates, score_hybrid_candidates
+from mindwiki.llm.models import LLMError, LLMResponse, LLMValidation, ResponseTiming
 
 
 class RecordingRetrievalRepository:
@@ -36,6 +39,16 @@ class RecordingRetrievalRepository:
     def search_vector(self, query_text: str, filters: RetrievalFilters, *, limit: int = 10):
         self.calls.append(("vector_only", query_text, filters, limit))
         return self._vector_candidates
+
+
+class RecordingLLMService:
+    def __init__(self, response: LLMResponse) -> None:
+        self._response = response
+        self.calls = []
+
+    def generate_text(self, payload):
+        self.calls.append(payload)
+        return self._response
 
 
 def build_candidate() -> BM25Candidate:
@@ -152,6 +165,63 @@ def test_query_decomposition_keeps_pronoun_dependent_multi_point_query_whole() -
         sub_queries=(),
         reason=None,
     )
+
+
+def test_query_expansion_generates_fixed_base_step_back_and_hyde_queries() -> None:
+    llm_service = RecordingLLMService(
+        LLMResponse(
+            request_id="req_001",
+            model="gpt-5.4",
+            output_text='{"step_back_query":"检索召回层的职责边界是什么？","hyde_query":"检索召回层负责根据用户问题召回相关 chunk，并为后续排序与生成提供候选证据。"}',
+            status="success",
+            parsed_output={
+                "step_back_query": "检索召回层的职责边界是什么？",
+                "hyde_query": "检索召回层负责根据用户问题召回相关 chunk，并为后续排序与生成提供候选证据。",
+            },
+            validation=LLMValidation(final_status="accepted"),
+            timing=ResponseTiming(latency_ms=5),
+        )
+    )
+    service = QueryExpansionService(llm_service=llm_service)
+
+    result = service.expand("为什么要给 chunk 打分？")
+
+    assert result == QueryExpansion(
+        query="为什么要给 chunk 打分？",
+        base_query="为什么要给 chunk 打分？",
+        step_back_query="检索召回层的职责边界是什么？",
+        hyde_query="检索召回层负责根据用户问题召回相关 chunk，并为后续排序与生成提供候选证据。",
+        use_step_back=True,
+        use_hyde=True,
+    )
+    assert len(llm_service.calls) == 1
+    payload = llm_service.calls[0]
+    assert payload.task_type == "query_expansion"
+    assert payload.response_format is not None
+    assert payload.metadata["interface_name"] == "query_expansion"
+
+
+def test_query_expansion_raises_when_llm_generation_fails() -> None:
+    llm_service = RecordingLLMService(
+        LLMResponse(
+            request_id="req_002",
+            model="gpt-5.4",
+            output_text="",
+            status="failed",
+            validation=LLMValidation(final_status="repairable"),
+            timing=ResponseTiming(latency_ms=5),
+            error=LLMError(
+                error_type="network_error",
+                retryable=True,
+                fallback_allowed=True,
+                message="temporary",
+            ),
+        )
+    )
+    service = QueryExpansionService(llm_service=llm_service)
+
+    with pytest.raises(RuntimeError, match="Failed to generate query expansion"):
+        service.expand("为什么要给 chunk 打分？")
 
 
 def test_retrieve_passes_strong_filters_to_repository() -> None:
