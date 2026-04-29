@@ -17,6 +17,59 @@
 
 ### 2026-04-29
 
+#### 记录 044：完成模块 06 任务 04，补最小检索数据投影
+
+- 状态：已完成
+- 范围：完成模块 06 中“任务 04：补最小检索数据投影”
+- 结果：
+  - 已新增 `src/mindwiki/application/retrieval_models.py`
+  - 已建立第一版检索侧共享模型：
+    - `TimeRange`
+    - `RetrievalFilters`
+    - `ChunkLocation`
+    - `ChunkProjection`
+  - 已新增 `src/mindwiki/infrastructure/retrieval_repository.py`
+  - 已建立第一版 PostgreSQL 检索投影仓储能力：
+    - `ProjectionQuery`
+    - `RetrievalRepository`
+    - `PostgresRetrievalRepository`
+    - `build_projection_query()`
+    - `build_retrieval_repository()`
+  - 当前最小检索数据投影已覆盖：
+    - `chunk_id`
+    - `document_id`
+    - `section_id`
+    - `document_title`
+    - `section_title`
+    - `chunk_text`
+    - `source_type`
+    - `document_type`
+    - `document_tags`
+    - `location.chunk_index`
+    - `location.section_id`
+    - `location.page_number`
+    - `location.imported_at`
+  - 当前投影查询已具备前置过滤承接能力：
+    - `source_types`
+    - `document_scope`
+    - `tags`
+    - `time_range`
+  - 当前实现边界保持收敛：
+    - 本任务只补投影与过滤查询承接
+    - 尚未进入关键词匹配 / BM25 排序逻辑
+    - 尚未生成统一 `chunk hit` 结果
+  - 已新增 `tests/test_retrieval_projection.py`，覆盖：
+    - 无过滤条件时的最小投影 SQL
+    - 多过滤条件同时生效时的 SQL 与参数组装
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_projection.py tests/test_cli.py tests/test_llm_models.py tests/test_llm_provider.py tests/test_llm_service.py` 通过
+  - 当前共 `44` 个测试，全部通过
+- 遗留问题：
+  - 当前检索投影仓储尚未被上层召回服务消费
+  - 当前还没有关键词匹配、排序分数与 `match_sources`
+- 下一步：
+  - 进入模块 06 任务 05：实现基础关键词 / BM25 召回 MVP
+
 #### 记录 043：完成模块 06 任务 03，明确第一阶段 `time_range` 时间字段承接
 
 - 状态：已完成
@@ -1613,7 +1666,7 @@
 | 01 | 检索设计对接与当前数据结构差异修正 | 已完成 | 已收敛 chunk 主对象、可实现过滤与当前差异清单 |
 | 02 | 补标签真实落库与检索侧承接 | 已完成 | 已完成 `tags / document_tags` 表与导入写入链路 |
 | 03 | 明确并补第一阶段 `time_range` 时间字段承接 | 已完成 | 已确定第一阶段统一按 `documents.imported_at` 承接 |
-| 04 | 补最小检索数据投影 | 未开始 | 为召回层准备稳定的查询字段与返回字段 |
+| 04 | 补最小检索数据投影 | 已完成 | 已完成投影模型、过滤模型和 PostgreSQL 投影仓储 |
 | 05 | 实现基础关键词 / BM25 召回 MVP | 未开始 | 先完成最小可用召回，不直接进入 hybrid |
 | 06 | 实现统一 `chunk hit` 返回结构与最小过滤能力 | 未开始 | 对齐返回结构，并覆盖 `source_types / document_scope / tags / time_range` |
 | 07 | 补本地验收脚本与 README 说明 | 未开始 | 支撑真实回归验证 |
