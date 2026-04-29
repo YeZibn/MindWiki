@@ -17,6 +17,81 @@
 
 ### 2026-04-29
 
+#### 记录 055：确定模块 08 为混合检索与融合排序 MVP
+
+- 状态：进行中
+- 范围：在模块 07 已完成 import-time embedding、`Milvus` 写入、`vector_only` 与 `bm25_only` 单通道召回的前提下，正式定义下一开发模块的目标、边界与任务拆解
+- 结果：
+  - 已确认模块 08 的核心目标是：
+    - 先补齐 `hybrid` 检索与融合排序的最小闭环
+  - 已确认模块 08 当前阶段不直接进入：
+    - LLM rerank
+    - query decomposition
+    - step-back
+    - HyDE
+    - sub-query merge
+    - context builder
+    - Step 09 完整检索编排
+  - 已确认模块 08 主要覆盖范围：
+    - 对齐 `Step 8.5 / 8.6 / 8.7 / 8.8` 与当前代码结构
+    - 在统一检索 service 中接入 `retrieval_mode = hybrid`
+    - 建立两路候选按 `chunk_id` 去重与合并逻辑
+    - 落地第一阶段 `RRF + 加权融合` 公式
+    - 扩展统一 `score_breakdown`
+    - 补本地 `hybrid` 验收脚本与 README 说明
+  - 已确认模块 08 的实现主对象仍统一为：
+    - `chunk`
+  - 已确认模块 08 的输出仍保持复用统一 `chunk hit` 协议，但需补充：
+    - `bm25_score`
+    - `vector_score`
+    - `rrf_score`
+    - `normalized_rrf_score`
+    - `normalized_vector_score`
+    - `normalized_bm25_score`
+    - `dual_hit_bonus`
+    - `final_score`
+- 模块目标：
+  - 让系统第一次具备可解释的双通道混合召回能力
+  - 保持与现有强过滤、`ChunkHit` 返回结构和后续 Step 09 编排层兼容
+  - 为后续 rerank、context builder 和问答生成链路提供更稳定候选集
+- 分步任务拆解：
+  - 任务 01：混合检索设计对接与当前代码差异修正
+    - 对照 `Step 8.5 / 8.6 / 8.7 / 8.8` 与当前代码完成第一轮差异梳理
+    - 明确哪些能力进入模块 08，哪些继续留到后续 Step 09 / Step 10
+  - 任务 02：扩展候选模型与融合中间结构
+    - 补两路候选合并所需字段
+    - 补统一融合候选结构与排序辅助字段
+  - 任务 03：实现 `hybrid` 去重、RRF 与加权融合
+    - 按 `chunk_id` 合并两路候选
+    - 计算 `rrf_score`
+    - 计算归一化分数
+    - 计算 `dual_hit_bonus`
+    - 计算 `final_score`
+  - 任务 04：扩展统一检索 service，接入 `hybrid`
+    - 在现有 `bm25_only / vector_only` 基础上补 `hybrid`
+    - 保持现有模式兼容
+  - 任务 05：补 `score_breakdown` 与排序打平规则
+    - 对齐 `Step 8.7` 的返回字段
+    - 对齐同分时的稳定排序规则
+  - 任务 06：补本地 `hybrid` 验收脚本、README 与运行说明
+    - 固化混合检索的本地验收入口
+    - 补最小示例与能力边界说明
+- 当前建议执行顺序：
+  - 先完成设计与当前实现差异对接
+  - 再补融合中间结构
+  - 然后落 `RRF + 加权融合`
+  - 最后补统一返回和本地验收
+- 当前边界判断：
+  - 模块 07 已解决 import-time vector 写入与 `vector_only` 单通道召回，不需要在模块 08 重复实现
+  - `hybrid` 是进入 Step 09 编排层之前最关键的检索层缺口
+  - 当前如果直接跳到 Step 09 或 Step 10，会建立在不完整的候选集能力之上
+- 遗留问题：
+  - `normalized_vector_score / normalized_bm25_score` 的边界处理需在任务 03 中明确落地
+  - `vector_top_k / bm25_top_k` 是否继续先复用接口层 `top_k`，还是引入内部默认值，需在任务 01 中收敛
+  - 本地 `hybrid` 验收脚本仍会依赖真实 embedding 网关、PostgreSQL 与真实 `Milvus`
+- 下一步：
+  - 开始模块 08 任务 01：混合检索设计对接与当前代码差异修正
+
 #### 记录 054：完成模块 07 任务 07，补本地 `vector_only` 验收脚本与运行说明
 
 - 状态：已完成
