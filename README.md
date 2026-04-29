@@ -35,6 +35,7 @@ PYTHONPATH=src python3 -m mindwiki import dir --help
 Current non-CLI integration entrypoint:
 
 - `src/mindwiki/llm/service.py` exposes the first `generate_text` service entrypoint for OpenAI-compatible LLM calls
+- `src/mindwiki/application/retrieval_service.py` exposes the first `bm25_only` retrieval service entrypoint
 
 Single-file import:
 
@@ -80,6 +81,8 @@ Current limitation:
 - LLM integration currently exposes only the `generate_text` capability
 - structured output handling currently supports minimal local JSON parsing and lightweight schema checks
 - citation validation and repair retries are not implemented yet
+- retrieval currently supports only `bm25_only`
+- retrieval currently relies on PostgreSQL native full-text search and does not implement vector or hybrid recall yet
 
 ## LLM Setup
 
@@ -123,6 +126,44 @@ print(response.status)
 print(response.output_text)
 ```
 
+## Retrieval Setup
+
+The project now supports a first-stage `bm25_only` retrieval path backed by PostgreSQL full-text search.
+
+Current retrieval behavior:
+
+- retrieval main object is `chunk`
+- supported retrieval mode is currently only `bm25_only`
+- strong filters currently support:
+  - `source_types`
+  - `document_scope`
+  - `tags`
+  - `time_range`
+- first-stage `time_range` means `documents.imported_at`
+- `match_sources` currently reflects:
+  - `document_title`
+  - `section_title`
+  - `document_tags`
+  - `chunk_text`
+
+Minimal retrieval example:
+
+```python
+from mindwiki.application.retrieval_models import RetrievalQuery
+from mindwiki.application.retrieval_service import RetrievalService
+
+service = RetrievalService()
+result = service.retrieve(
+    RetrievalQuery(
+        query="verification note",
+        top_k=5,
+    )
+)
+
+for hit in result.hits:
+    print(hit.document_title, hit.score, hit.match_sources)
+```
+
 PostgreSQL persistence setup:
 
 ```bash
@@ -155,6 +196,7 @@ Minimal end-to-end verification:
 PYTHONPATH=src python3 scripts/verify_local_import.py
 PYTHONPATH=src python3 scripts/verify_local_directory_import.py
 PYTHONPATH=src python3 scripts/verify_local_llm.py
+PYTHONPATH=src python3 scripts/verify_local_retrieval.py
 ```
 
 The verification script will:
@@ -181,6 +223,14 @@ The LLM verification script will:
 - run one real `generate_text` smoke test against the configured gateway
 - expect the exact response `MINDWIKI_LLM_OK`
 - print a JSON summary including `status`, `model`, `usage`, and normalized `error` fields
+
+The retrieval verification script will:
+
+- import one tagged Markdown sample into PostgreSQL
+- run one broad `bm25_only` retrieval query
+- run one filtered retrieval query with `tags`, `source_types`, `document_scope`, and `time_range`
+- verify that the imported document can be retrieved under both query shapes
+- print a JSON summary including top hit, `match_sources`, and `score_breakdown`
 
 Current status conventions:
 

@@ -17,6 +17,47 @@
 
 ### 2026-04-29
 
+#### 记录 047：完成模块 06 任务 07，补本地验收脚本与 README 说明
+
+- 状态：已完成
+- 范围：完成模块 06 中“任务 07：补本地验收脚本与 README 说明”
+- 结果：
+  - 已新增 `scripts/verify_local_retrieval.py`
+  - 已为基础检索模块补充第一版本地验收脚本能力：
+    - 导入一份带标签的 Markdown 样例
+    - 执行一轮宽范围 `bm25_only` 检索
+    - 执行一轮带 `tags / source_types / document_scope / time_range` 的过滤检索
+    - 校验导入文档可以在两类查询下被命中
+    - 输出统一 JSON 摘要，包含：
+      - `broad_top_hit`
+      - `tagged_top_hit`
+      - `match_sources`
+      - `score_breakdown`
+  - 已更新 `README.md`，补充：
+    - 当前检索模块能力边界
+    - `bm25_only` 检索说明
+    - 强过滤条件说明
+    - 最小检索调用示例
+    - 检索本地验收命令
+  - 已更新 `scripts/README.md`，补充 `verify_local_retrieval.py` 的脚本说明
+  - 当前模块 06 已具备从标签/时间承接、投影、BM25、统一 `chunk hit` 到本地验收脚本的最小闭环
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_retrieval_projection.py tests/test_cli.py tests/test_llm_models.py tests/test_llm_provider.py tests/test_llm_service.py` 通过
+  - `python3 -m py_compile scripts/verify_local_retrieval.py` 通过
+  - 真实执行 `PYTHONPATH=src python3 scripts/verify_local_retrieval.py` 成功
+  - 本次真实返回：
+    - `import_exit_code = 0`
+    - `broad_hit_count = 5`
+    - `tagged_hit_count = 1`
+    - `broad_top_hit.document_title = Retrieval Verification Note`
+    - `tagged_top_hit.source_type = markdown`
+- 遗留问题：
+  - 当前检索仍只支持 `bm25_only`
+  - 当前还没有 CLI 形式的检索入口
+  - 当前还没有 `vector_only / hybrid`、LLM rerank、context builder
+- 下一步：
+  - 模块 06 已完成，可进入下一开发模块讨论
+
 #### 记录 046：完成模块 06 任务 06，实现统一 `chunk hit` 返回结构与最小过滤能力
 
 - 状态：已完成
@@ -1776,4 +1817,4 @@
 | 04 | 补最小检索数据投影 | 已完成 | 已完成投影模型、过滤模型和 PostgreSQL 投影仓储 |
 | 05 | 实现基础关键词 / BM25 召回 MVP | 已完成 | 已完成 PostgreSQL 原生全文检索与基础权重承接 |
 | 06 | 实现统一 `chunk hit` 返回结构与最小过滤能力 | 已完成 | 已完成 `RetrievalService` 与统一 `chunk hit` 映射 |
-| 07 | 补本地验收脚本与 README 说明 | 未开始 | 支撑真实回归验证 |
+| 07 | 补本地验收脚本与 README 说明 | 已完成 | 已完成检索本地验收脚本与文档闭环 |
