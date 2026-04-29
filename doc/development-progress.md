@@ -17,6 +17,59 @@
 
 ### 2026-04-29
 
+#### 记录 074：完成模块 10 任务 04，实现 citation payload
+
+- 状态：已完成
+- 范围：完成模块 10 中“任务 04：实现 citation payload”，先打通从结构化 context sections 到统一引用载荷的最小转换链路
+- 结果：
+  - 已新增：
+    - `src/mindwiki/application/citation_payload_service.py`
+  - 已扩展：
+    - `src/mindwiki/application/retrieval_models.py`
+  - 当前已建立模块 10 第一版 citation 输出结构：
+    - `CitationPayload`
+    - `CitationBuildResult`
+  - 当前 `CitationPayloadService.build_citations()` 已按当前设计落地最小实现：
+    - 输入 `ContextBuildResult`
+    - 为每条 evidence 生成稳定 `citation_id`
+    - 保留：
+      - `sub_query_id`
+      - `chunk_id`
+      - `document_id`
+      - `section_id`
+      - `document_title`
+      - `section_title`
+      - `source_type`
+      - `location`
+      - `evidence_role`
+    - 生成展示层字段：
+      - `snippet`
+      - `match_sources`
+  - 当前第一阶段 citation 策略已明确：
+    - `snippet` 仅用于展示
+    - 真实证据仍以 context 中的 `chunk_text` 为准
+    - 当前 `match_sources` 先最小承接为：
+      - `("chunk_text",)`
+- 验证结果：
+  - `python3 -m py_compile src/mindwiki/application/citation_payload_service.py src/mindwiki/application/retrieval_models.py` 通过
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_llm_models.py tests/test_llm_provider.py` 通过
+  - 当前共 `35` 个相关测试，全部通过
+  - 已新增测试覆盖：
+    - 从 `ContextBuildResult` 正常生成 citation 列表
+    - `sub_query_id / evidence_role / location` 正常保留
+    - `snippet` 只做展示裁剪，不替代真实证据
+- 当前实现边界：
+  - 当前 citation payload 仅面向后续回答层输入结构
+  - 当前尚未进入：
+    - 前端展示格式细化
+    - 回答生成
+  - 当前仍未补完整本地验收脚本与 README 闭环
+- 遗留问题：
+  - 当前 `match_sources` 仍是最小承接，若后续回答层或前端需要更细来源解释，可在后续迭代补强
+  - 当前 citation payload 仍未进入真实本地端到端验收脚本
+- 下一步：
+  - 进入模块 10 任务 05：补本地验收脚本、README 与运行说明
+
 #### 记录 073：完成模块 10 任务 03，实现 context builder
 
 - 状态：已完成
@@ -3227,5 +3280,5 @@
 | 01 | 检索编排后半段设计对接与当前代码差异修正 | 已完成 | 已收敛 `SiliconFlow reranker` 方案与后半段差异清单 |
 | 02 | 实现子任务级 rerank 通道 | 已完成 | 已完成独立 rerank 协议、service、provider 与 `top 5` 应用层承接 |
 | 03 | 实现 context builder | 已完成 | 已完成分段结构、前 `2` 条证据承接与连续 chunk 最小合并 |
-| 04 | 实现 citation payload | 进行中 | 输出面向回答层的结构化引用数据 |
-| 05 | 补本地验收脚本、README 与运行说明 | 未开始 | 固化 `Step 09` 完整闭环验收入口 |
+| 04 | 实现 citation payload | 已完成 | 已完成从 context sections 到统一 citation payload 的最小转换链路 |
+| 05 | 补本地验收脚本、README 与运行说明 | 进行中 | 固化 `Step 09` 完整闭环验收入口 |

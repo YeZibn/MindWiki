@@ -21,6 +21,7 @@ from mindwiki.application.retrieval_models import (
     VectorCandidate,
 )
 from mindwiki.application.context_builder_service import ContextBuilderService
+from mindwiki.application.citation_payload_service import CitationPayloadService
 from mindwiki.application.query_decomposition_service import QueryDecompositionService
 from mindwiki.application.query_expansion_service import QueryExpansionService
 from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates, score_hybrid_candidates
@@ -526,6 +527,71 @@ def test_context_builder_keeps_sub_query_sections_and_top_two_evidence_items() -
     assert len(second_section.evidence_items) == 1
     assert second_section.evidence_items[0].evidence_role == "primary"
     assert second_section.evidence_items[0].chunk_text == "Step 9 covers orchestration."
+
+
+def test_citation_payload_service_builds_structured_citations_from_context() -> None:
+    projection = build_candidate().projection
+    context_service = ContextBuilderService()
+    citation_service = CitationPayloadService()
+
+    context_result = context_service.build_context(
+        (
+            SubQueryRerankResult(
+                sub_query_id="sq_1",
+                sub_query_text="Step 8的职责？",
+                reranked_candidates=(
+                    RerankedSubQueryCandidate(
+                        chunk_id=UUID("00000000-0000-0000-0000-000000000071"),
+                        projection=ChunkProjection(
+                            chunk_id=UUID("00000000-0000-0000-0000-000000000071"),
+                            document_id=projection.document_id,
+                            section_id=projection.section_id,
+                            document_title="Step 8 Doc",
+                            section_title="Section A",
+                            chunk_text="Step 8 covers indexing and retrieval interfaces.",
+                            source_type="markdown",
+                            document_type="markdown",
+                            document_tags=projection.document_tags,
+                            location=ChunkLocation(chunk_index=1, section_id=projection.section_id),
+                        ),
+                        rerank_score=0.95,
+                    ),
+                    RerankedSubQueryCandidate(
+                        chunk_id=UUID("00000000-0000-0000-0000-000000000072"),
+                        projection=ChunkProjection(
+                            chunk_id=UUID("00000000-0000-0000-0000-000000000072"),
+                            document_id=UUID("00000000-0000-0000-0000-000000000073"),
+                            section_id=projection.section_id,
+                            document_title="Step 8 Doc 2",
+                            section_title="Section B",
+                            chunk_text="Step 8 also covers hybrid recall.",
+                            source_type="markdown",
+                            document_type="markdown",
+                            document_tags=projection.document_tags,
+                            location=ChunkLocation(chunk_index=2, section_id=projection.section_id),
+                        ),
+                        rerank_score=0.89,
+                    ),
+                ),
+            ),
+        )
+    )
+
+    citation_result = citation_service.build_citations(context_result)
+
+    assert len(citation_result.citations) == 2
+    first = citation_result.citations[0]
+    assert first.citation_id == "cit_001"
+    assert first.sub_query_id == "sq_1"
+    assert first.document_title == "Step 8 Doc"
+    assert first.evidence_role == "primary"
+    assert first.match_sources == ("chunk_text",)
+    assert first.snippet == "Step 8 covers indexing and retrieval interfaces."
+    assert first.location.chunk_index == 1
+
+    second = citation_result.citations[1]
+    assert second.citation_id == "cit_002"
+    assert second.evidence_role == "supporting"
 
 
 def test_retrieve_passes_strong_filters_to_repository() -> None:

@@ -141,6 +141,31 @@ class ContextBuildResult:
 
 
 @dataclass(frozen=True, slots=True)
+class CitationPayload:
+    """Unified citation payload for one evidence item."""
+
+    citation_id: str
+    sub_query_id: str
+    chunk_id: UUID
+    document_id: UUID
+    section_id: UUID | None
+    document_title: str
+    section_title: str | None
+    source_type: str
+    snippet: str
+    match_sources: tuple[str, ...] = field(default_factory=tuple)
+    evidence_role: str = "supporting"
+    location: ChunkLocation = field(default_factory=lambda: ChunkLocation(chunk_index=0))
+
+
+@dataclass(frozen=True, slots=True)
+class CitationBuildResult:
+    """Structured citation package derived from built context."""
+
+    citations: tuple[CitationPayload, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""
 
