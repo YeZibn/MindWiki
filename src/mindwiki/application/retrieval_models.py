@@ -36,6 +36,16 @@ class RetrievalQuery:
 
 
 @dataclass(frozen=True, slots=True)
+class QueryDecomposition:
+    """First-stage query decomposition result for retrieval orchestration."""
+
+    query: str
+    decomposition_mode: str = "none"
+    sub_queries: tuple[str, ...] = ()
+    reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""
 

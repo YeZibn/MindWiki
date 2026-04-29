@@ -10,10 +10,12 @@ from mindwiki.application.retrieval_models import (
     ChunkLocation,
     ChunkProjection,
     HybridCandidate,
+    QueryDecomposition,
     RetrievalFilters,
     RetrievalQuery,
     VectorCandidate,
 )
+from mindwiki.application.query_decomposition_service import QueryDecompositionService
 from mindwiki.application.retrieval_service import RetrievalService, merge_hybrid_candidates, score_hybrid_candidates
 
 
@@ -82,6 +84,74 @@ def test_retrieve_wraps_bm25_candidates_into_chunk_hits() -> None:
     assert hit.score == 0.73
     assert hit.score_breakdown == {"bm25_score": 0.73}
     assert repository.calls[0][3] == 3
+
+
+def test_query_decomposition_defaults_to_none_for_single_topic_query() -> None:
+    service = QueryDecompositionService()
+
+    result = service.decompose("总结一下 Step 8 的设计思路")
+
+    assert result == QueryDecomposition(
+        query="总结一下 Step 8 的设计思路",
+        decomposition_mode="none",
+        sub_queries=(),
+        reason=None,
+    )
+
+
+def test_query_decomposition_splits_explicit_comparison_queries() -> None:
+    service = QueryDecompositionService()
+
+    result = service.decompose("BM25 和 embedding 检索有什么区别？")
+
+    assert result == QueryDecomposition(
+        query="BM25 和 embedding 检索有什么区别？",
+        decomposition_mode="decompose",
+        sub_queries=(
+            "BM25的职责边界或核心特点是什么？",
+            "embedding 检索的职责边界或核心特点是什么？",
+        ),
+        reason="comparison_detected",
+    )
+
+
+def test_query_decomposition_splits_prefixed_multi_object_summary_queries() -> None:
+    service = QueryDecompositionService()
+
+    result = service.decompose("分别总结 Step 8 和 Step 9 的职责")
+
+    assert result == QueryDecomposition(
+        query="分别总结 Step 8 和 Step 9 的职责",
+        decomposition_mode="decompose",
+        sub_queries=("Step 8的职责？", "Step 9的职责？"),
+        reason="multi_object_summary_detected",
+    )
+
+
+def test_query_decomposition_splits_multi_point_queries_when_clauses_are_independent() -> None:
+    service = QueryDecompositionService()
+
+    result = service.decompose("解释 chunk 打分的作用，并且说明 rerank 的作用")
+
+    assert result == QueryDecomposition(
+        query="解释 chunk 打分的作用，并且说明 rerank 的作用",
+        decomposition_mode="decompose",
+        sub_queries=("解释 chunk 打分的作用？", "说明 rerank 的作用？"),
+        reason="multi_point_detected",
+    )
+
+
+def test_query_decomposition_keeps_pronoun_dependent_multi_point_query_whole() -> None:
+    service = QueryDecompositionService()
+
+    result = service.decompose("总结 Step 8，并说明它和 Step 9 的关系")
+
+    assert result == QueryDecomposition(
+        query="总结 Step 8，并说明它和 Step 9 的关系",
+        decomposition_mode="none",
+        sub_queries=(),
+        reason=None,
+    )
 
 
 def test_retrieve_passes_strong_filters_to_repository() -> None:

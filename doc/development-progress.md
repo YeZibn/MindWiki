@@ -17,6 +17,177 @@
 
 ### 2026-04-29
 
+#### 记录 064：完成模块 09 任务 02，建立 query decomposition 协议与规则优先最小实现
+
+- 状态：已完成
+- 范围：完成模块 09 中“任务 02：建立 query decomposition 协议与最小实现”，先以规则优先方式落地 `Step 9.1`
+- 结果：
+  - 已在 `src/mindwiki/application/retrieval_models.py` 中新增：
+    - `QueryDecomposition`
+  - 已建立模块 09 第一阶段拆解输出协议：
+    - `decomposition_mode = none | decompose`
+    - `sub_queries[]`
+    - `reason`
+  - 已新增 `src/mindwiki/application/query_decomposition_service.py`
+  - 当前已落地第一版规则优先拆解服务：
+    - `QueryDecompositionService.decompose()`
+  - 当前规则覆盖的最小场景包括：
+    - 比较类
+    - 多对象总结类
+    - 一问多点类
+  - 当前已正式固化第一阶段约束：
+    - 默认只允许一层拆解
+    - `sub_queries` 最多 `3` 条
+    - 无法稳定拆解时优先返回：
+      - `decomposition_mode = none`
+  - 当前实现已显式避免错误拆解的场景：
+    - 后续子句依赖代词时不拆
+    - 回顾梳理类当前先保守保留整体 query，不提前做激进拆分
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py` 通过
+  - 已新增测试覆盖：
+    - 单主题 query 默认不拆
+    - 比较类 query 拆解
+    - 多对象总结类 query 拆解
+    - 一问多点类 query 拆解
+    - 代词依赖场景保持不拆
+- 当前实现边界：
+  - 本任务只完成 `9.1` 的协议与规则优先最小实现
+  - 当前尚未接入：
+    - `9.2` `base_query / step_back_query / hyde_query`
+    - `9.3` 单个 `sub-query` 四路归并
+  - 当前也尚未把 LLM 判定正式引入拆解链路，避免在模块 09 前半段过早扩大不确定性
+- 遗留问题：
+  - 后续若规则命中率不足，可在不改变输出协议的前提下补 LLM 辅助判定
+  - 当前 `QueryDecompositionService` 仍是独立编排服务，后续需要在任务 03 进入统一检索编排入口
+- 下一步：
+  - 进入模块 09 任务 03：实现固定三类查询扩展
+
+#### 记录 063：完成模块 09 任务 01，补检索编排设计对接与当前代码差异修正
+
+- 状态：已完成
+- 范围：完成模块 09 中“任务 01：检索编排设计对接与当前代码差异修正”，对照 `Step 9.1 / 9.2 / 9.3` 与当前已落地检索代码，收敛模块 09 的真实开发边界与实现缺口
+- 对照结论：
+  - 已核对设计文档：
+    - `doc/design/step-09-retrieval-orchestration/09.01-query-decomposition-rules.md`
+    - `doc/design/step-09-retrieval-orchestration/09.02-step-back-and-hyde-expansion-strategy.md`
+    - `doc/design/step-09-retrieval-orchestration/09.03-subquery-local-merge-strategy.md`
+  - 已核对当前实现：
+    - `src/mindwiki/application/retrieval_models.py`
+    - `src/mindwiki/application/retrieval_service.py`
+  - 已确认当前代码实际只覆盖：
+    - 单查询输入
+    - `bm25_only`
+    - `vector_only`
+    - `hybrid`
+  - 已确认当前代码尚未进入模块 09 正式范围的能力包括：
+    - `9.1` query decomposition 协议
+    - `decomposition_mode = none | decompose`
+    - `sub_queries[]`
+    - `9.2` 固定三类扩展：
+      - `base_query`
+      - `step_back_query`
+      - `hyde_query`
+    - `9.3` 单个 `sub-query` 四路归并：
+      - `base_query + bm25`
+      - `base_query + vector`
+      - `step_back_query + vector`
+      - `hyde_query + vector`
+    - `9.3` 子任务级独立候选集输出结构
+- 当前差异修正结果：
+  - 已确认当前 `RetrievalQuery` 仍是单一 `query` 输入模型，不能直接承接 `sub_queries[]`
+  - 已确认当前 `RetrievalResult` 仍是单层 `hits[]` 输出，不能表达“每个 `sub-query` 独立候选集”
+  - 已确认当前 `hybrid` 只是：
+    - 原始 query 的两路召回归并
+    - `bm25 + vector`
+  - 已确认当前 `hybrid` 不是 `9.3` 所要求的四路归并实现
+  - 已确认当前融合逻辑仍沿用模块 08 的通用混合召回打分，不等同于 `9.3` 中面向单个 `sub-query` 的融合版 RRF 权重方案
+- 模块 09 后续实现边界已正式收敛为：
+  - 任务 02：建立 `9.1` 拆解协议与最小实现
+  - 任务 03：建立 `9.2` 固定三类扩展结构
+  - 任务 04：建立 `9.3` 单个 `sub-query` 四路归并结构
+  - 任务 05：补模块 09 前半段本地验收脚本与说明
+- 明确不纳入本模块当前阶段的内容：
+  - `9.4` 子任务级 LLM rerank
+  - `9.5` context builder
+  - `9.6` citation payload
+  - Step 10 生成链路
+- 遗留问题：
+  - 模块 09 需要先补新的编排输入输出模型，再决定如何最小侵入接入现有 `RetrievalService`
+  - 模块 08 的 `hybrid` 应继续保留为底层召回能力，不应直接替代模块 09 的编排层输出结构
+- 下一步：
+  - 进入模块 09 任务 02：建立 query decomposition 协议与最小实现
+
+#### 记录 062：修正模块 09 方向，按 `Step 9.1-9.3` 推进检索编排前半段
+
+- 状态：已完成
+- 范围：在模块 08 已完成 `bm25_only / vector_only / hybrid` 检索基础与本地验收闭环的前提下，重新对齐 `Step 9` 设计稿，修正下一开发模块的目标、边界与任务拆解
+- 结果：
+  - 已确认此前对模块 09 的定义偏离了 `Step 9` 设计稿正式线路
+  - 已重新核对 `9.1 / 9.2 / 9.3` 设计稿后确认：
+    - `9.1` 负责 query 拆解
+    - `9.2` 负责对原 query 或每个 `sub-query` 固定生成：
+      - `base_query`
+      - `step_back_query`
+      - `hyde_query`
+    - `9.3` 负责单个 `sub-query` 内部 4 路结果归并
+  - 已确认模块 09 当前阶段不应提前进入：
+    - `9.4` 子任务级 LLM rerank
+    - `9.5` context builder
+    - `9.6` citation payload
+    - Step 10 生成链路
+  - 已确认模块 09 的前置基础已经具备：
+    - `bm25_only`
+    - `vector_only`
+    - `hybrid`
+    - import-time embedding 与 `Milvus` 写入
+    - 统一 `ChunkHit` 返回结构
+- 模块目标：
+  - 让系统第一次具备符合 `Step 9` 设计稿的检索编排前半段能力
+  - 先完成：
+    - query decomposition
+    - step-back / HyDE 扩展
+    - 单个 `sub-query` 内部 4 路结果归并
+  - 为后续 `9.4 / 9.5 / 9.6 / Step 10` 提供稳定输入
+- 分步任务拆解：
+  - 任务 01：检索编排设计对接与当前代码差异修正
+    - 对照 `9.1 / 9.2 / 9.3` 与当前实现完成第一轮差异梳理
+    - 明确哪些能力进入模块 09，哪些继续留到后续 `9.4+`
+  - 任务 02：建立 query decomposition 协议与最小实现
+    - 顶层输出：
+      - `decomposition_mode = none | decompose`
+    - 若为 `decompose`，输出：
+      - `sub_queries[]`
+  - 任务 03：实现固定三类查询扩展
+    - 对原 query 或每个 `sub-query` 固定生成：
+      - `base_query`
+      - `step_back_query`
+      - `hyde_query`
+  - 任务 04：实现单个 `sub-query` 内部 4 路结果归并
+    - `base_query + bm25`
+    - `base_query + vector`
+    - `step_back_query + vector`
+    - `hyde_query + vector`
+    - 按设计稿中的融合版 RRF 完成子任务内归并
+  - 任务 05：补本地验收脚本、README 与运行说明
+    - 固化模块 09 前半段的本地验收入口
+    - 补最小示例与当前能力边界说明
+- 当前建议执行顺序：
+  - 先完成设计与当前实现差异对接
+  - 再补 query decomposition
+  - 然后补固定三类扩展
+  - 最后补单个 `sub-query` 内 4 路结果归并与本地验收
+- 当前边界判断：
+  - 模块 08 已经把候选召回层补完整，不需要在模块 09 重复实现底层检索
+  - 当前最缺的是符合设计稿的编排前半段，而不是直接进入 context builder 或生成层
+  - 直接跳 `9.4+` 或 Step 10 会让后续链路建立在缺失 query 规划和单子任务归并的基础上，风险更高
+- 遗留问题：
+  - `9.1` 的拆解判断具体是规则优先还是直接走 LLM 判定，需在任务 02 讨论时收敛
+  - `9.2` 的 `step_back_query / hyde_query` 是否直接复用现有 `generate_text` 能力，需在任务 03 中正式确定
+  - `9.3` 的 4 路结果归并是否在本模块就对接现有 `hybrid` 检索 service，需在任务 04 中收口
+- 下一步：
+  - 开始模块 09 任务 01：检索编排设计对接与当前代码差异修正
+
 #### 记录 061：完成模块 08 任务 06，补本地 `hybrid` 验收脚本、README 与运行说明
 
 - 状态：已完成
