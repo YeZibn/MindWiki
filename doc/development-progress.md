@@ -17,6 +17,61 @@
 
 ### 2026-04-29
 
+#### 记录 046：完成模块 06 任务 06，实现统一 `chunk hit` 返回结构与最小过滤能力
+
+- 状态：已完成
+- 范围：完成模块 06 中“任务 06：实现统一 `chunk hit` 返回结构与最小过滤能力”
+- 结果：
+  - 已扩展 `src/mindwiki/application/retrieval_models.py`
+  - 已新增统一检索结果模型：
+    - `ChunkHit`
+    - `RetrievalResult`
+  - 已新增 `src/mindwiki/application/retrieval_service.py`
+  - 已建立第一版上层检索 service：
+    - `RetrievalService`
+    - 统一 `retrieve()` 入口
+  - 当前 `retrieve()` 已完成的最小行为包括：
+    - 承接 `RetrievalQuery`
+    - 当前仅允许 `retrieval_mode = bm25_only`
+    - 调用检索仓储执行 `search_bm25()`
+    - 将 BM25 候选统一映射为 `chunk hit`
+  - 当前统一 `chunk hit` 已收敛为：
+    - `chunk_id`
+    - `document_id`
+    - `section_id`
+    - `document_title`
+    - `section_title`
+    - `chunk_text`
+    - `source_type`
+    - `location`
+    - `score`
+    - `match_sources`
+    - `score_breakdown`
+  - 当前最小过滤能力已从“SQL 可承接”推进到“上层可调用”：
+    - `source_types`
+    - `document_scope`
+    - `tags`
+    - `time_range`
+  - 当前 `score_breakdown` 第一阶段先保留最小兼容结构：
+    - `{"bm25_score": <score>}`
+  - 当前实现边界仍保持收敛：
+    - 尚未进入 `vector_only`
+    - 尚未进入 `hybrid`
+    - 尚未接入 CLI 或本地检索验收脚本
+  - 已新增 `tests/test_retrieval_service.py`，覆盖：
+    - BM25 候选到 `chunk hit` 的统一映射
+    - 强过滤条件透传到仓储层
+    - 非 `bm25_only` 模式的拒绝行为
+- 验证结果：
+  - `python3 -m pytest tests/test_retrieval_service.py tests/test_retrieval_projection.py tests/test_cli.py tests/test_llm_models.py tests/test_llm_provider.py tests/test_llm_service.py` 通过
+  - 当前共 `49` 个测试，全部通过
+- 遗留问题：
+  - 当前检索能力还没有本地端到端验收脚本
+  - 当前 README 还未说明检索层用法与当前限制
+  - 当前尚未提供可直接手工触发的检索入口
+- 下一步：
+  - 进入模块 06 任务 07：补本地验收脚本与 README 说明
+
 #### 记录 045：完成模块 06 任务 05，实现基础关键词 / BM25 召回 MVP
 
 - 状态：已完成
@@ -1720,5 +1775,5 @@
 | 03 | 明确并补第一阶段 `time_range` 时间字段承接 | 已完成 | 已确定第一阶段统一按 `documents.imported_at` 承接 |
 | 04 | 补最小检索数据投影 | 已完成 | 已完成投影模型、过滤模型和 PostgreSQL 投影仓储 |
 | 05 | 实现基础关键词 / BM25 召回 MVP | 已完成 | 已完成 PostgreSQL 原生全文检索与基础权重承接 |
-| 06 | 实现统一 `chunk hit` 返回结构与最小过滤能力 | 未开始 | 对齐返回结构，并覆盖 `source_types / document_scope / tags / time_range` |
+| 06 | 实现统一 `chunk hit` 返回结构与最小过滤能力 | 已完成 | 已完成 `RetrievalService` 与统一 `chunk hit` 映射 |
 | 07 | 补本地验收脚本与 README 说明 | 未开始 | 支撑真实回归验证 |

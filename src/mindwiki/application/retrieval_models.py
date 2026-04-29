@@ -68,3 +68,29 @@ class BM25Candidate:
     projection: ChunkProjection
     score: float
     match_sources: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkHit:
+    """Unified retrieval hit returned to upper layers."""
+
+    chunk_id: UUID
+    document_id: UUID
+    section_id: UUID | None
+    document_title: str
+    section_title: str | None
+    chunk_text: str
+    source_type: str
+    location: ChunkLocation
+    score: float
+    match_sources: tuple[str, ...] = field(default_factory=tuple)
+    score_breakdown: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalResult:
+    """Unified retrieval result payload for one retrieval query."""
+
+    query: str
+    retrieval_mode: str
+    hits: tuple[ChunkHit, ...] = field(default_factory=tuple)
