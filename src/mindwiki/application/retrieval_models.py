@@ -165,6 +165,19 @@ class CitationBuildResult:
     citations: tuple[CitationPayload, ...] = field(default_factory=tuple)
 
 
+ANSWER_CONFIDENCE_VALUES: tuple[str, ...] = ("high", "medium", "low")
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerGenerationResult:
+    """Structured first-stage answer generation result for QA only."""
+
+    question: str
+    answer: str
+    sources: tuple[CitationPayload, ...] = field(default_factory=tuple)
+    confidence: str = "low"
+
+
 @dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""

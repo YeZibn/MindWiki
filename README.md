@@ -43,6 +43,7 @@ Current non-CLI integration entrypoint:
 - `src/mindwiki/application/subquery_rerank_service.py` exposes the first `Step 09.4` per-sub-query rerank entrypoint
 - `src/mindwiki/application/context_builder_service.py` exposes the first `Step 09.5` context builder entrypoint
 - `src/mindwiki/application/citation_payload_service.py` exposes the first `Step 09.6` citation payload entrypoint
+- `src/mindwiki/application/answer_generation_service.py` exposes the first `Step 10` QA answer generation entrypoint
 
 Single-file import:
 
@@ -98,7 +99,8 @@ Current limitation:
   - per-sub-query rerank
   - context builder
   - citation payload
-- Step 10 generation is not implemented yet
+- Step 10 currently implements only the first QA answer generation path
+- document summary, multi-document synthesis, comparison analysis, and related note recommendation are not implemented yet
 
 ## LLM Setup
 
@@ -332,6 +334,54 @@ Local Step 09 full orchestration verification command:
 PYTHONPATH=src /opt/miniconda3/bin/python3 scripts/verify_local_step09_full_orchestration.py
 ```
 
+Minimal Step 10 QA answer generation example:
+
+```python
+from mindwiki.application.answer_generation_service import build_answer_generation_service
+from mindwiki.application.citation_payload_service import CitationPayloadService
+from mindwiki.application.context_builder_service import ContextBuilderService
+from mindwiki.application.query_decomposition_service import QueryDecompositionService
+from mindwiki.application.query_expansion_service import build_query_expansion_service
+from mindwiki.application.subquery_rerank_service import build_subquery_rerank_service
+from mindwiki.application.subquery_retrieval_service import SubQueryRetrievalService
+
+question = "分别总结 Step 8 和 Step 9 的职责"
+decomposition = QueryDecompositionService().decompose(question)
+expansion_service = build_query_expansion_service()
+retrieval_service = SubQueryRetrievalService()
+rerank_service = build_subquery_rerank_service()
+context_builder = ContextBuilderService()
+citation_service = CitationPayloadService()
+answer_service = build_answer_generation_service()
+
+rerank_results = []
+for index, sub_query in enumerate(decomposition.sub_queries, start=1):
+    expansion = expansion_service.expand(sub_query)
+    retrieval_result = retrieval_service.retrieve_for_sub_query(
+        sub_query_id=f"sq_{index}",
+        sub_query_text=sub_query,
+        expansion=expansion,
+        top_k=5,
+    )
+    rerank_results.append(rerank_service.rerank_sub_query(retrieval_result))
+
+context_result = context_builder.build_context(tuple(rerank_results))
+citation_result = citation_service.build_citations(context_result)
+answer_result = answer_service.generate_answer(
+    question=question,
+    context_result=context_result,
+    citation_result=citation_result,
+)
+
+print(answer_result.answer, answer_result.confidence, len(answer_result.sources))
+```
+
+Local Step 10 QA answer generation verification command:
+
+```bash
+PYTHONPATH=src /opt/miniconda3/bin/python3 scripts/verify_local_step10_answer_generation.py
+```
+
 PostgreSQL persistence setup:
 
 ```bash
@@ -403,6 +453,26 @@ The LLM verification script will:
 - run one real `generate_text` smoke test against the configured gateway
 - expect the exact response `MINDWIKI_LLM_OK`
 - print a JSON summary including `status`, `model`, `usage`, and normalized `error` fields
+
+The Step 10 answer-generation verification script will:
+
+- import one Markdown sample covering `Step 8 / Step 9 / Step 10`
+- run the real `Step 09` orchestration chain through:
+  - query decomposition
+  - fixed query expansion
+  - per-sub-query retrieval
+  - rerank
+  - context builder
+  - citation payload
+- run one real `Step 10` structured QA answer generation call against the current local knowledge base
+- accept either:
+  - a grounded cited answer
+  - a standardized no-answer result when the current knowledge base evidence is insufficient or conflicting
+- run one isolated real `Step 10` QA generation call against an in-script evidence fixture
+- verify the isolated answer returns stable structured output
+- if the isolated answer is a grounded cited answer, verify citation sources are returned
+- if the gateway conservatively refuses under the current prompt and schema, accept a standardized no-answer result
+- verify the local empty-context fallback still returns a low-confidence no-answer result
 
 The retrieval verification script will:
 
