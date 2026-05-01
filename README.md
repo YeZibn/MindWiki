@@ -30,6 +30,7 @@ Current available commands:
 PYTHONPATH=src python3 -m mindwiki --help
 PYTHONPATH=src python3 -m mindwiki import file --help
 PYTHONPATH=src python3 -m mindwiki import dir --help
+PYTHONPATH=src python3 -m mindwiki ask --help
 ```
 
 Current non-CLI integration entrypoint:
@@ -44,6 +45,7 @@ Current non-CLI integration entrypoint:
 - `src/mindwiki/application/context_builder_service.py` exposes the first `Step 09.5` context builder entrypoint
 - `src/mindwiki/application/citation_payload_service.py` exposes the first `Step 09.6` citation payload entrypoint
 - `src/mindwiki/application/answer_generation_service.py` exposes the first `Step 10` QA answer generation entrypoint
+- `src/mindwiki/application/qa_orchestration_service.py` exposes the first unified QA orchestration entrypoint across `Step 09 + Step 10`
 
 Single-file import:
 
@@ -80,6 +82,7 @@ Current CLI behavior:
 - `--tag` can be repeated
 - `--source-note` is optional
 - `--recursive` is only used for `import dir`
+- `ask` now runs the first-stage unified QA flow and prints structured JSON
 
 Current limitation:
 
@@ -374,6 +377,31 @@ answer_result = answer_service.generate_answer(
 )
 
 print(answer_result.answer, answer_result.confidence, len(answer_result.sources))
+```
+
+Minimal unified QA orchestration example:
+
+```python
+from mindwiki.application.qa_orchestration_service import build_qa_orchestration_service
+from mindwiki.application.retrieval_models import QARequest
+
+service = build_qa_orchestration_service()
+result = service.ask(
+    QARequest(
+        question="分别总结 Step 8 和 Step 9 的职责",
+        top_k=5,
+    )
+)
+
+print(result.answer_result.answer)
+print(result.answer_result.confidence)
+print([source.citation_id for source in result.answer_result.sources])
+```
+
+Minimal CLI QA example:
+
+```bash
+PYTHONPATH=src python3 -m mindwiki ask "分别总结 Step 8 和 Step 9 的职责"
 ```
 
 Local Step 10 QA answer generation verification command:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from uuid import UUID
 
 from mindwiki.application.import_models import ImportDirectoryRequest, ImportFileRequest
@@ -8,8 +9,15 @@ from mindwiki.application.import_service import (
     ImportService,
     scan_directory_files,
 )
+from mindwiki.application.retrieval_models import (
+    AnswerGenerationResult,
+    QAOrchestrationResult,
+    QueryDecomposition,
+)
 from mindwiki.cli.main import build_parser
 from mindwiki.cli.main import main
+from mindwiki.cli.main import run_interactive_shell
+import mindwiki.cli.main as cli_main_module
 from mindwiki.ingestion.markdown import parse_markdown
 from mindwiki.ingestion.pdf import (
     ParsedPdfDocument,
@@ -56,6 +64,15 @@ def test_parser_accepts_import_dir_command() -> None:
     assert str(args.path) == "docs"
     assert args.recursive is True
     assert args.tag == ["work"]
+
+
+def test_parser_accepts_ask_command() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["ask", "Step 10 的职责是什么？", "--top-k", "3"])
+
+    assert args.command == "ask"
+    assert args.question == "Step 10 的职责是什么？"
+    assert args.top_k == 3
 
 
 def test_import_file_returns_error_for_missing_path() -> None:
@@ -455,6 +472,75 @@ def test_main_accepts_single_markdown_file(tmp_path: Path, capsys, monkeypatch) 
     assert "persistence=" in captured.out
     assert "tags=work" in captured.out
     assert "source_note=study" in captured.out
+
+
+def test_main_runs_ask_command_and_prints_structured_json(capsys, monkeypatch) -> None:
+    class StubQAService:
+        def ask(self, request):
+            assert request.question == "Step 10 的职责是什么？"
+            assert request.top_k == 4
+            return QAOrchestrationResult(
+                question=request.question,
+                decomposition=QueryDecomposition(
+                    query=request.question,
+                    decomposition_mode="none",
+                    sub_queries=(),
+                ),
+                answer_result=AnswerGenerationResult(
+                    question=request.question,
+                    answer="Step 10 负责回答生成与约束。",
+                    confidence="high",
+                ),
+            )
+
+    monkeypatch.setattr(
+        cli_main_module,
+        "build_qa_orchestration_service",
+        lambda: StubQAService(),
+    )
+
+    exit_code = main(["ask", "Step 10 的职责是什么？", "--top-k", "4"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert payload["question"] == "Step 10 的职责是什么？"
+    assert payload["decomposition_mode"] == "none"
+    assert payload["sub_queries"] == []
+    assert payload["answer"] == "Step 10 负责回答生成与约束。"
+    assert payload["confidence"] == "high"
+    assert payload["sources"] == []
+
+
+def test_interactive_shell_prints_intro_help_and_exits(capsys, monkeypatch) -> None:
+    commands = iter(["帮助", "退出"])
+
+    exit_code = run_interactive_shell(read_input=lambda _: next(commands))
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "欢迎使用 MindWiki 交互式命令行" in captured.out
+    assert "输入 `help` 查看命令说明" in captured.out
+    assert "可用命令：" in captured.out
+    assert "ask <question>" in captured.out
+    assert "已退出 MindWiki。" in captured.out
+
+
+def test_main_without_arguments_enters_interactive_shell(capsys, monkeypatch) -> None:
+    commands = iter(["示例", "exit"])
+    monkeypatch.setattr(cli_main_module.sys, "argv", ["mindwiki"])
+    monkeypatch.setattr(
+        cli_main_module,
+        "run_interactive_shell",
+        lambda: run_interactive_shell(read_input=lambda _: next(commands)),
+    )
+
+    exit_code = main()
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "常用示例：" in captured.out
+    assert "import file ./notes/example.md" in captured.out
 
 
 def test_parse_markdown_extracts_frontmatter_and_sections(tmp_path: Path) -> None:

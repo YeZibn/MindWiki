@@ -15,6 +15,143 @@
 
 ## 开发记录
 
+### 2026-05-02
+
+#### 记录 083：完成模块 12 任务 05，补单元测试、README 与开发记录闭环
+
+- 状态：已完成
+- 范围：完成模块 12 中“任务 05：补单元测试、README 与开发记录闭环”，固化统一问答主入口的使用方式与最小验收口径
+- 结果：
+  - 已新增单元测试：
+    - `tests/test_qa_orchestration_service.py`
+  - 已扩展 CLI 测试：
+    - `tests/test_cli.py`
+  - 已覆盖能力：
+    - 统一 QA orchestration service 的完整编排输出
+    - `decompose` / `none` 两类子任务承接
+    - 空问题与非法 `top_k` 拒绝
+    - `mindwiki ask` parser
+    - `mindwiki ask` 结构化 JSON 输出
+  - 已更新 `README.md`：
+    - 新增 `mindwiki ask --help`
+    - 新增统一 QA orchestration entrypoint 说明
+    - 新增应用层与 CLI 最小问答示例
+  - 验证结果：
+    - `python3 -m py_compile src/mindwiki/application/qa_orchestration_service.py src/mindwiki/cli/main.py tests/test_qa_orchestration_service.py tests/test_cli.py` 通过
+    - `PYTHONPATH=src python3 -m pytest tests/test_qa_orchestration_service.py tests/test_cli.py tests/test_answer_generation_service.py` 通过
+    - 当前结果：`38 passed`
+- 下一步：
+  - 模块 12 已完成，可继续讨论下一模块
+
+#### 记录 082：完成模块 12 任务 01-04，落地统一问答主入口
+
+- 状态：已完成
+- 范围：完成模块 12 中“任务 01：统一主入口设计对接与当前代码差异修正”“任务 02：建立统一 QA 请求 / 返回协议”“任务 03：实现统一 QA orchestration service”“任务 04：接入 CLI 最小问答命令”
+- 结果：
+  - 已新增统一主入口协议：
+    - `QARequest`
+    - `QAOrchestrationResult`
+  - 已新增：
+    - `src/mindwiki/application/qa_orchestration_service.py`
+  - 当前统一问答主入口已收敛为：
+    - 应用层统一入口 `QAOrchestrationService.ask()`
+    - 内部串起：
+      - query decomposition
+      - query expansion
+      - sub-query retrieval
+      - rerank
+      - context builder
+      - citation payload
+      - answer generation
+  - 当前主入口返回已承接：
+    - 标准 question
+    - decomposition 结果
+    - rerank 中间结果
+    - context 结果
+    - citation 结果
+    - 最终 answer 结果
+  - 已新增最小 CLI 问答命令：
+    - `mindwiki ask "<question>"`
+  - 当前 CLI 第一阶段输出已收敛为 JSON，至少包含：
+    - `question`
+    - `decomposition_mode`
+    - `sub_queries`
+    - `answer`
+    - `confidence`
+    - `sources`
+- 影响：
+  - 项目第一次具备统一的问答主入口
+  - 后续 API / 前端不需要再手动复制 `Step 09 + Step 10` 编排逻辑
+- 遗留问题：
+  - 当前 CLI 还未承接 `tags / source_types / document_scope / time_range` 等过滤参数
+  - 当前仍未进入 HTTP API、前端问答页和会话历史
+- 下一步：
+  - 继续补测试与 README，完成当前模块收口
+
+#### 记录 081：启动新开发模块，推进统一问答主入口
+
+- 状态：进行中
+- 范围：在模块 11 已完成 `Step 10` 第一阶段 QA 回答链路后，启动新的开发模块，补统一问答主入口，避免当前问答链路仍依赖脚本或手动串接多个 service
+- 模块定位：
+  - 当前新模块正式进入：
+    - 统一 QA orchestration service
+    - 统一请求/返回协议
+    - CLI 问答主入口
+    - 主链路最小对外输出结构
+  - 目标是让现有：
+    - query decomposition
+    - query expansion
+    - sub-query retrieval
+    - rerank
+    - context builder
+    - citation payload
+    - answer generation
+    真正收敛到一个稳定主入口，而不是继续由示例代码或验收脚本手动编排
+- 启动原因：
+  - 当前主链路能力虽然已经齐备，但仍缺少统一承接点
+  - 目前 `Step 09 + Step 10` 的应用层调用方式仍偏分散：
+    - README 示例手动串接
+    - 验收脚本手动串接
+  - 若不补统一主入口，后续 CLI、API、前端都会重复承接同一段编排逻辑
+  - 当前阶段最适合先补应用层统一入口，再决定后续 API / 前端如何复用
+- 分步任务拆解：
+  - 任务 01：统一主入口设计对接与当前代码差异修正
+    - 明确主入口放在应用层而不是脚本层
+    - 明确第一阶段只承接 QA，不提前混入摘要、推荐或多任务路由
+  - 任务 02：建立统一 QA 请求 / 返回协议
+    - 至少包含：
+      - `question`
+      - `answer`
+      - `confidence`
+      - `sources`
+    - 同时保留主链路内部编排结果的最小承接能力，便于后续 API / 前端复用
+  - 任务 03：实现统一 QA orchestration service
+    - 将 `Step 09 + Step 10` 串为一个应用层入口
+    - 对外只暴露一次 `ask`/`qa` 调用
+  - 任务 04：接入 CLI 最小问答命令
+    - 让用户可以直接从 CLI 触发完整问答主链路
+  - 任务 05：补单元测试、README 与开发记录闭环
+    - 固化统一主入口的使用方式和最小验收口径
+- 当前边界判断：
+  - 当前模块优先目标是：
+    - 统一应用层主入口
+    - CLI 最小接线
+  - 当前模块暂不直接进入：
+    - HTTP API
+    - 前端问答页
+    - 会话历史
+    - 多任务类型路由
+- 当前建议执行顺序：
+  - 先补统一协议
+  - 再补 orchestration service
+  - 然后接 CLI
+  - 最后补测试和说明
+- 遗留问题：
+  - CLI 第一阶段输出是走 JSON 结构还是更偏人类可读格式，需要在任务 04 中收敛
+  - 主入口返回是否暴露完整中间态编排结果，需要在任务 02-03 中收敛
+- 下一步：
+  - 开始当前模块任务 01：统一主入口设计对接与当前代码差异修正
+
 ### 2026-04-29
 
 #### 记录 080：完成模块 11 任务 06，补本地验收脚本、README 与运行说明
@@ -3592,3 +3729,13 @@
 | 04 | 实现引用插入与回答层映射规则 | 已完成 | 已实现模型侧 `citation_id` 选择与应用侧 `CitationPayload` 映射 |
 | 05 | 实现无答案场景与生成降级路径 | 已完成 | 已补标准拒答文案、prompt 约束与统一降级出口 |
 | 06 | 补本地验收脚本、README 与运行说明 | 已完成 | 已补 `Step 10` 本地验收脚本与运行说明，真实执行已确认结构化拒答出口 |
+
+### 模块 12：统一问答主入口
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 统一主入口设计对接与当前代码差异修正 | 已完成 | 已收敛主入口在应用层，只承接第一阶段 QA |
+| 02 | 建立统一 QA 请求 / 返回协议 | 已完成 | 已新增 `QARequest / QAOrchestrationResult` |
+| 03 | 实现统一 QA orchestration service | 已完成 | 已新增统一 `ask()` 应用层入口 |
+| 04 | 接入 CLI 最小问答命令 | 已完成 | 已新增 `mindwiki ask` 命令 |
+| 05 | 补单元测试、README 与开发记录闭环 | 已完成 | 已补测试、README 示例与开发记录闭环 |

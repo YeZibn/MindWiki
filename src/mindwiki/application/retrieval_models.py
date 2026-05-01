@@ -179,6 +179,29 @@ class AnswerGenerationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class QARequest:
+    """Unified first-stage QA request for the main orchestration entrypoint."""
+
+    question: str
+    filters: RetrievalFilters = field(default_factory=RetrievalFilters)
+    top_k: int = 5
+
+
+@dataclass(frozen=True, slots=True)
+class QAOrchestrationResult:
+    """Unified first-stage QA orchestration result."""
+
+    question: str
+    decomposition: QueryDecomposition
+    rerank_results: tuple[SubQueryRerankResult, ...] = field(default_factory=tuple)
+    context_result: ContextBuildResult = field(default_factory=ContextBuildResult)
+    citation_result: CitationBuildResult = field(default_factory=CitationBuildResult)
+    answer_result: AnswerGenerationResult = field(
+        default_factory=lambda: AnswerGenerationResult(question="", answer="")
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkLocation:
     """Minimal location payload for first-stage chunk retrieval."""
 
