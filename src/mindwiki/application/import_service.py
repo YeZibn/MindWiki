@@ -18,9 +18,11 @@ from mindwiki.infrastructure.import_repository import (
     build_import_repository,
 )
 from mindwiki.application.vector_index_service import VectorIndexService, build_vector_index_service
+from mindwiki.observability.logger import LogEvent, LogTimer, ensure_request_id, get_logger
 
 
 SUPPORTED_FILE_TYPES = {".md", ".pdf"}
+_LOGGER = get_logger("mindwiki.import")
 
 
 @dataclass(slots=True)
@@ -66,16 +68,69 @@ class ImportService:
 
     def import_file(self, request: ImportFileRequest) -> CommandResult:
         path = request.path.expanduser().resolve()
+        request_id = ensure_request_id(
+            {
+                "request_id": f"import-file:{path}",
+            }
+        )
+        timer = LogTimer()
+        _LOGGER.emit(
+            LogEvent(
+                event="import_file_started",
+                request_id=request_id,
+                interface_name="import_file",
+                stage="import_file",
+                status="started",
+                metadata={
+                    "path": str(path),
+                    "tag_count": len(request.tags),
+                    "has_source_note": bool(request.source_note),
+                },
+            )
+        )
 
         if not path.exists():
+            _LOGGER.emit(
+                LogEvent(
+                    event="import_file_completed",
+                    request_id=request_id,
+                    interface_name="import_file",
+                    stage="import_file",
+                    status="failed",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={"path": str(path), "reason": "file_not_found"},
+                )
+            )
             return CommandResult(exit_code=1, message=f"File not found: {path}")
 
         if not path.is_file():
+            _LOGGER.emit(
+                LogEvent(
+                    event="import_file_completed",
+                    request_id=request_id,
+                    interface_name="import_file",
+                    stage="import_file",
+                    status="failed",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={"path": str(path), "reason": "path_not_file"},
+                )
+            )
             return CommandResult(exit_code=1, message=f"Path is not a file: {path}")
 
         suffix = path.suffix.lower()
         if suffix not in SUPPORTED_FILE_TYPES:
             supported_types = ", ".join(sorted(SUPPORTED_FILE_TYPES))
+            _LOGGER.emit(
+                LogEvent(
+                    event="import_file_completed",
+                    request_id=request_id,
+                    interface_name="import_file",
+                    stage="import_file",
+                    status="failed",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={"path": str(path), "reason": "unsupported_file_type", "type": suffix},
+                )
+            )
             return CommandResult(
                 exit_code=1,
                 message=(
@@ -85,29 +140,44 @@ class ImportService:
             )
 
         if suffix == ".md":
-            return self._import_markdown_file(request)
+            result = self._import_markdown_file(request, request_id=request_id)
+        elif suffix == ".pdf":
+            result = self._import_pdf_file(request, request_id=request_id)
+        else:
+            details = [
+                "Single-file import request accepted.",
+                f"path={path}",
+                f"type={suffix}",
+                "parsing=pending",
+                "persistence=skipped",
+            ]
 
-        if suffix == ".pdf":
-            return self._import_pdf_file(request)
+            if request.tags:
+                details.append(f"tags={','.join(request.tags)}")
 
-        details = [
-            "Single-file import request accepted.",
-            f"path={path}",
-            f"type={suffix}",
-            "parsing=pending",
-            "persistence=skipped",
-        ]
+            if request.source_note:
+                details.append(f"source_note={request.source_note}")
 
-        if request.tags:
-            details.append(f"tags={','.join(request.tags)}")
-
-        if request.source_note:
-            details.append(f"source_note={request.source_note}")
-
-        return CommandResult(
-            exit_code=0,
-            message=" ".join(details),
+            result = CommandResult(
+                exit_code=0,
+                message=" ".join(details),
+            )
+        _LOGGER.emit(
+            LogEvent(
+                event="import_file_completed",
+                request_id=request_id,
+                interface_name="import_file",
+                stage="import_file",
+                status="success" if result.exit_code == 0 else "failed",
+                duration_ms=timer.elapsed_ms(),
+                metadata={
+                    "path": str(path),
+                    "type": suffix,
+                    "exit_code": result.exit_code,
+                },
+            )
         )
+        return result
 
     def _safe_mark_failed(self, import_job_id: object, exc: Exception) -> None:
         if self._repository is None:
@@ -126,6 +196,7 @@ class ImportService:
         request: ImportFileRequest,
         *,
         import_job_id: object | None = None,
+        request_id: str | None = None,
     ) -> CommandResult:
         path = request.path.expanduser().resolve()
         suffix = path.suffix.lower()
@@ -189,7 +260,10 @@ class ImportService:
                 vector_sync_details: list[str] = []
                 if self._vector_index_service is not None:
                     try:
-                        vector_result = self._vector_index_service.index_document(persisted.document_id)
+                        vector_result = self._vector_index_service.index_document(
+                            persisted.document_id,
+                            request_id=request_id,
+                        )
                     except Exception as exc:
                         if active_import_job_id is not None:
                             self._safe_mark_failed(active_import_job_id, exc)
@@ -245,6 +319,7 @@ class ImportService:
         request: ImportFileRequest,
         *,
         import_job_id: object | None = None,
+        request_id: str | None = None,
     ) -> CommandResult:
         path = request.path.expanduser().resolve()
         suffix = path.suffix.lower()
@@ -323,7 +398,10 @@ class ImportService:
                 vector_sync_details: list[str] = []
                 if self._vector_index_service is not None:
                     try:
-                        vector_result = self._vector_index_service.index_document(persisted.document_id)
+                        vector_result = self._vector_index_service.index_document(
+                            persisted.document_id,
+                            request_id=request_id,
+                        )
                     except Exception as exc:
                         if active_import_job_id is not None:
                             self._safe_mark_failed(active_import_job_id, exc)
@@ -420,11 +498,53 @@ class ImportService:
 
     def import_directory(self, request: ImportDirectoryRequest) -> CommandResult:
         path = request.path.expanduser().resolve()
+        request_id = ensure_request_id(
+            {
+                "request_id": f"import-dir:{path}",
+            }
+        )
+        timer = LogTimer()
+        _LOGGER.emit(
+            LogEvent(
+                event="import_directory_started",
+                request_id=request_id,
+                interface_name="import_directory",
+                stage="import_directory",
+                status="started",
+                metadata={
+                    "path": str(path),
+                    "recursive": request.recursive,
+                    "tag_count": len(request.tags),
+                },
+            )
+        )
 
         if not path.exists():
+            _LOGGER.emit(
+                LogEvent(
+                    event="import_directory_completed",
+                    request_id=request_id,
+                    interface_name="import_directory",
+                    stage="import_directory",
+                    status="failed",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={"path": str(path), "reason": "directory_not_found"},
+                )
+            )
             return CommandResult(exit_code=1, message=f"Directory not found: {path}")
 
         if not path.is_dir():
+            _LOGGER.emit(
+                LogEvent(
+                    event="import_directory_completed",
+                    request_id=request_id,
+                    interface_name="import_directory",
+                    stage="import_directory",
+                    status="failed",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={"path": str(path), "reason": "path_not_directory"},
+                )
+            )
             return CommandResult(
                 exit_code=1,
                 message=f"Path is not a directory: {path}",
@@ -529,10 +649,29 @@ class ImportService:
         if request.source_note:
             details.append(f"source_note={request.source_note}")
 
-        return CommandResult(
+        result = CommandResult(
             exit_code=0,
             message=" ".join(details),
         )
+        _LOGGER.emit(
+            LogEvent(
+                event="import_directory_completed",
+                request_id=request_id,
+                interface_name="import_directory",
+                stage="import_directory",
+                status="success" if result.exit_code == 0 else "failed",
+                duration_ms=timer.elapsed_ms(),
+                metadata={
+                    "path": str(path),
+                    "supported_file_count": len(scan_result.supported_files),
+                    "unsupported_file_count": len(scan_result.unsupported_files),
+                    "empty_file_count": len(scan_result.empty_files),
+                    "success_jobs": execution_summary.success_jobs,
+                    "failed_jobs": execution_summary.failed_jobs,
+                },
+            )
+        )
+        return result
 
 
 def normalize_tags(tags: Sequence[str]) -> tuple[str, ...]:

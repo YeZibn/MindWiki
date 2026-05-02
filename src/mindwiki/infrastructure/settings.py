@@ -38,6 +38,8 @@ def _load_dotenv_file(path: Path) -> None:
 @dataclass(slots=True)
 class Settings:
     database_url: str = ""
+    log_level: str = "INFO"
+    log_format: str = "json"
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model_id: str = ""
@@ -72,6 +74,8 @@ def get_settings() -> Settings:
     _load_dotenv_file(DOTENV_PATH)
     return Settings(
         database_url=os.getenv("MINDWIKI_DATABASE_URL", ""),
+        log_level=os.getenv("LOG_LEVEL", "INFO"),
+        log_format=os.getenv("LOG_FORMAT", "json"),
         llm_base_url=os.getenv("LLM_BASE_URL", ""),
         llm_api_key=os.getenv("LLM_API_KEY", ""),
         llm_model_id=os.getenv("LLM_MODEL_ID", ""),

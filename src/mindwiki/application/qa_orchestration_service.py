@@ -22,6 +22,9 @@ from mindwiki.application.subquery_rerank_service import (
     build_subquery_rerank_service,
 )
 from mindwiki.application.subquery_retrieval_service import SubQueryRetrievalService
+from mindwiki.observability.logger import LogEvent, LogTimer, ensure_request_id, get_logger
+
+_LOGGER = get_logger("mindwiki.qa")
 
 
 class QAOrchestrationService:
@@ -53,11 +56,42 @@ class QAOrchestrationService:
         if request.top_k <= 0:
             raise ValueError("top_k must be greater than 0.")
 
+        request_id = ensure_request_id()
+        total_timer = LogTimer()
+        _LOGGER.emit(
+            LogEvent(
+                event="qa_orchestration_started",
+                request_id=request_id,
+                interface_name="qa_orchestration",
+                stage="qa",
+                status="started",
+                metadata={
+                    "question": normalized_question,
+                    "top_k": request.top_k,
+                },
+            )
+        )
+
         decomposition = self._decomposition_service.decompose(normalized_question)
+        _LOGGER.emit(
+            LogEvent(
+                event="qa_decomposition_completed",
+                request_id=request_id,
+                interface_name="qa_orchestration",
+                stage="decomposition",
+                status="success",
+                metadata={
+                    "decomposition_mode": decomposition.decomposition_mode,
+                    "sub_query_count": len(decomposition.sub_queries),
+                    "sub_queries": list(decomposition.sub_queries),
+                },
+            )
+        )
         retrieval_units = decomposition.sub_queries or (normalized_question,)
 
         rerank_results = []
         for index, sub_query in enumerate(retrieval_units, start=1):
+            sub_query_timer = LogTimer()
             expansion = self._expansion_service.expand(sub_query)
             retrieval_result = self._retrieval_service.retrieve_for_sub_query(
                 sub_query_id=f"sq_{index}",
@@ -66,7 +100,24 @@ class QAOrchestrationService:
                 filters=request.filters,
                 top_k=request.top_k,
             )
-            rerank_results.append(self._rerank_service.rerank_sub_query(retrieval_result))
+            rerank_result = self._rerank_service.rerank_sub_query(retrieval_result)
+            rerank_results.append(rerank_result)
+            _LOGGER.emit(
+                LogEvent(
+                    event="qa_sub_query_completed",
+                    request_id=request_id,
+                    interface_name="qa_orchestration",
+                    stage="sub_query",
+                    status="success",
+                    duration_ms=sub_query_timer.elapsed_ms(),
+                    metadata={
+                        "sub_query_id": f"sq_{index}",
+                        "sub_query_text": sub_query,
+                        "candidate_count": len(retrieval_result.candidates),
+                        "reranked_count": len(rerank_result.reranked_candidates),
+                    },
+                )
+            )
 
         context_result = self._context_builder.build_context(tuple(rerank_results))
         citation_result = self._citation_service.build_citations(context_result)
@@ -75,7 +126,7 @@ class QAOrchestrationService:
             context_result=context_result,
             citation_result=citation_result,
         )
-        return QAOrchestrationResult(
+        result = QAOrchestrationResult(
             question=normalized_question,
             decomposition=decomposition,
             rerank_results=tuple(rerank_results),
@@ -83,6 +134,23 @@ class QAOrchestrationService:
             citation_result=citation_result,
             answer_result=answer_result,
         )
+        _LOGGER.emit(
+            LogEvent(
+                event="qa_orchestration_completed",
+                request_id=request_id,
+                interface_name="qa_orchestration",
+                stage="qa",
+                status="success",
+                duration_ms=total_timer.elapsed_ms(),
+                metadata={
+                    "context_section_count": len(context_result.sections),
+                    "citation_count": len(citation_result.citations),
+                    "answer_confidence": answer_result.confidence,
+                    "answer_source_count": len(answer_result.sources),
+                },
+            )
+        )
+        return result
 
 
 def build_qa_orchestration_service() -> QAOrchestrationService:

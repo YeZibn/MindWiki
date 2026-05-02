@@ -112,6 +112,8 @@ The project now supports a minimal OpenAI-compatible LLM integration.
 Required environment variables:
 
 ```bash
+LOG_LEVEL=INFO
+LOG_FORMAT=json
 LLM_BASE_URL=https://kuaipao.ai/v1
 LLM_API_KEY=your-api-key
 LLM_MODEL_ID=gpt-5.4
@@ -132,6 +134,8 @@ MILVUS_COLLECTION_NAME=mindwiki_chunks
 
 Current LLM behavior:
 
+- structured application logs now default to `JSON lines` on `stdout / stderr`
+- each logged QA / LLM flow now carries a generated `request_id`
 - `build_llm_service()` reads LLM settings from `.env` or the shell environment
 - `build_rerank_service()` reads rerank settings from `.env` or the shell environment
 - `build_embedding_service()` reads embedding settings from `.env` or the shell environment
@@ -142,6 +146,22 @@ Current LLM behavior:
 - fallback can switch from `LLM_MODEL_ID` to `LLM_MODEL_MINI_ID`
 - structured outputs can be parsed locally when `response_format.type=json_schema`
 - local schema validation currently checks JSON parseability, required fields, and basic types
+
+Current logging behavior:
+
+- first-stage logs currently emit structured `JSON lines`
+- `INFO` and lower-severity events go to `stdout`
+- `ERROR` events go to `stderr`
+- sensitive metadata fields such as `api_key` and `token` are redacted
+- long metadata strings are truncated before output
+- current structured logs now cover:
+  - unified QA orchestration
+  - `generate_text`
+  - `rerank`
+  - `embedding`
+  - `import file`
+  - `import dir`
+- current minimal logging verification is covered by local automated tests rather than a separate network-dependent script
 
 Current embedding behavior:
 

@@ -169,6 +169,27 @@ def test_openai_compatible_provider_maps_network_error() -> None:
     assert response.error.retryable is True
 
 
+def test_openai_compatible_provider_maps_timeout_error() -> None:
+    def fake_urlopen(req, timeout):
+        raise TimeoutError("The read operation timed out")
+
+    provider = OpenAICompatibleProvider(
+        OpenAICompatibleConfig(
+            base_url="https://kuaipao.ai/v1",
+            api_key="test-key",
+        ),
+        urlopen=fake_urlopen,
+    )
+
+    response = provider.generate(build_request())
+
+    assert response.status == "failed"
+    assert response.error is not None
+    assert response.error.error_type == "timeout_error"
+    assert response.error.retryable is True
+    assert response.error.fallback_allowed is True
+
+
 def test_openai_compatible_embedding_provider_builds_payload_and_parses_response() -> None:
     def fake_urlopen(req, timeout):
         assert req.full_url == "https://api.siliconflow.cn/v1/embeddings"
@@ -255,3 +276,51 @@ def test_openai_compatible_rerank_provider_builds_payload_and_parses_response() 
     assert response.results[0].relevance_score == 0.91
     assert response.results[1].document_id == "chunk_1"
     assert response.usage["total_tokens"] == 21
+
+
+def test_openai_compatible_embedding_provider_raises_runtime_error_on_timeout() -> None:
+    provider = OpenAICompatibleEmbeddingProvider(
+        OpenAICompatibleConfig(
+            base_url="https://api.siliconflow.cn/v1",
+            api_key="embed-key",
+        ),
+        urlopen=lambda req, timeout: (_ for _ in ()).throw(TimeoutError("The read operation timed out")),
+    )
+
+    try:
+        provider.embed(
+            EmbeddingRequest(
+                model="Qwen/Qwen3-Embedding-8B",
+                texts=("A",),
+                timeout_ms=8000,
+            )
+        )
+    except RuntimeError as exc:
+        assert "Embedding request timed out" in str(exc)
+    else:
+        raise AssertionError("Expected embedding timeout to raise RuntimeError")
+
+
+def test_openai_compatible_rerank_provider_raises_runtime_error_on_timeout() -> None:
+    provider = OpenAICompatibleRerankProvider(
+        OpenAICompatibleConfig(
+            base_url="https://api.siliconflow.cn/v1",
+            api_key="rerank-key",
+        ),
+        urlopen=lambda req, timeout: (_ for _ in ()).throw(TimeoutError("The read operation timed out")),
+    )
+
+    try:
+        provider.rerank(
+            RerankRequest(
+                query="Step 8的职责？",
+                documents=(RerankDocument(document_id="chunk_1", text="doc 1"),),
+                model="Qwen/Qwen3-Reranker-8B",
+                top_n=1,
+                timeout_ms=15000,
+            )
+        )
+    except RuntimeError as exc:
+        assert "Rerank request timed out" in str(exc)
+    else:
+        raise AssertionError("Expected rerank timeout to raise RuntimeError")

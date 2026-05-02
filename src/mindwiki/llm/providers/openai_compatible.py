@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import socket
 import time
 from typing import Any, Protocol
 from urllib import error, request
@@ -89,6 +90,10 @@ class OpenAICompatibleProvider:
             return self._build_http_error_response(llm_request, exc, started_at)
         except error.URLError as exc:
             return self._build_network_error_response(llm_request, exc, started_at)
+        except TimeoutError as exc:
+            return self._build_timeout_error_response(llm_request, exc, started_at)
+        except socket.timeout as exc:
+            return self._build_timeout_error_response(llm_request, exc, started_at)
 
         return self._build_success_response(llm_request, raw_response, started_at)
 
@@ -208,6 +213,27 @@ class OpenAICompatibleProvider:
             ),
         )
 
+    def _build_timeout_error_response(
+        self,
+        llm_request: LLMRequest,
+        exc: TimeoutError | socket.timeout,
+        started_at: float,
+    ) -> LLMResponse:
+        return LLMResponse(
+            request_id=str(llm_request.metadata.get("request_id", "")),
+            model=llm_request.model,
+            output_text="",
+            status="failed",
+            validation=LLMValidation(final_status="rejected"),
+            timing=ResponseTiming(latency_ms=self._latency_ms(started_at)),
+            error=LLMError(
+                error_type="timeout_error",
+                retryable=True,
+                fallback_allowed=llm_request.retry_policy.allow_fallback,
+                message=str(exc) or "request timed out",
+            ),
+        )
+
     @staticmethod
     def _extract_first_choice(raw_response: dict[str, Any]) -> dict[str, Any] | None:
         choices = raw_response.get("choices")
@@ -264,8 +290,13 @@ class OpenAICompatibleEmbeddingProvider:
             method="POST",
         )
 
-        with self._urlopen(http_request, timeout=embedding_request.timeout_ms / 1000) as response:
-            raw_response = json.loads(response.read().decode("utf-8"))
+        try:
+            with self._urlopen(http_request, timeout=embedding_request.timeout_ms / 1000) as response:
+                raw_response = json.loads(response.read().decode("utf-8"))
+        except TimeoutError as exc:
+            raise RuntimeError(f"Embedding request timed out: {exc}") from exc
+        except socket.timeout as exc:
+            raise RuntimeError(f"Embedding request timed out: {exc}") from exc
 
         data = raw_response.get("data")
         if not isinstance(data, list) or not data:
@@ -342,8 +373,13 @@ class OpenAICompatibleRerankProvider:
             method="POST",
         )
 
-        with self._urlopen(http_request, timeout=rerank_request.timeout_ms / 1000) as response:
-            raw_response = json.loads(response.read().decode("utf-8"))
+        try:
+            with self._urlopen(http_request, timeout=rerank_request.timeout_ms / 1000) as response:
+                raw_response = json.loads(response.read().decode("utf-8"))
+        except TimeoutError as exc:
+            raise RuntimeError(f"Rerank request timed out: {exc}") from exc
+        except socket.timeout as exc:
+            raise RuntimeError(f"Rerank request timed out: {exc}") from exc
 
         raw_results = raw_response.get("results", raw_response.get("data", []))
         results: list[RerankResult] = []

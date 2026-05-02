@@ -11,6 +11,7 @@ from mindwiki.infrastructure.vector_index_repository import (
     VectorIndexRepository,
     build_vector_index_repository,
 )
+from mindwiki.observability.logger import ensure_request_id
 from mindwiki.infrastructure.milvus_store import (
     MilvusChunkRecord,
     MilvusStore,
@@ -51,16 +52,28 @@ class VectorIndexService:
         self._embedding_service = embedding_service
         self._milvus_store = milvus_store
 
-    def index_document(self, document_id: UUID) -> DocumentVectorSyncResult:
+    def index_document(
+        self,
+        document_id: UUID,
+        *,
+        request_id: str | None = None,
+    ) -> DocumentVectorSyncResult:
         chunks = self._repository.list_document_chunks_for_embedding(document_id)
         if not chunks:
             raise RuntimeError(f"No active chunks found for document {document_id}.")
 
+        resolved_request_id = ensure_request_id(
+            None if request_id is None else {"request_id": request_id}
+        )
         texts = tuple(build_chunk_embedding_text(chunk) for chunk in chunks)
         embedding_response = self._embedding_service.generate_embeddings(
             GenerateEmbeddingsInput(
                 texts=texts,
-                metadata={"document_id": str(document_id), "embedding_version": EMBEDDING_VERSION},
+                metadata={
+                    "request_id": resolved_request_id,
+                    "document_id": str(document_id),
+                    "embedding_version": EMBEDDING_VERSION,
+                },
             )
         )
         if len(embedding_response.vectors) != len(chunks):

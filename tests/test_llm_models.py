@@ -93,6 +93,8 @@ def test_settings_reads_llm_configuration_from_dotenv(tmp_path: Path, monkeypatc
     env_path.write_text(
         (
             "MINDWIKI_DATABASE_URL=postgresql://postgres:password@localhost:5432/mindwiki\n"
+            "LOG_LEVEL=DEBUG\n"
+            "LOG_FORMAT=json\n"
             "LLM_BASE_URL=https://kuaipao.ai/v1\n"
             "LLM_API_KEY=test-key\n"
             "LLM_MODEL_ID=gpt-5.4\n"
@@ -108,6 +110,8 @@ def test_settings_reads_llm_configuration_from_dotenv(tmp_path: Path, monkeypatc
 
     for key in (
         "MINDWIKI_DATABASE_URL",
+        "LOG_LEVEL",
+        "LOG_FORMAT",
         "LLM_BASE_URL",
         "LLM_API_KEY",
         "LLM_MODEL_ID",
@@ -126,6 +130,8 @@ def test_settings_reads_llm_configuration_from_dotenv(tmp_path: Path, monkeypatc
     settings = settings_module.get_settings()
 
     assert settings.database_url == "postgresql://postgres:password@localhost:5432/mindwiki"
+    assert settings.log_level == "DEBUG"
+    assert settings.log_format == "json"
     assert settings.llm_base_url == "https://kuaipao.ai/v1"
     assert settings.llm_api_key == "test-key"
     assert settings.llm_model_id == "gpt-5.4"

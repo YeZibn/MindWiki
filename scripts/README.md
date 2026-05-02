@@ -16,3 +16,10 @@ Current scope:
 - `verify_local_step09_orchestration.py`: run a minimal end-to-end verification for `Step 09` front-half orchestration, including query decomposition, fixed query expansion, and per-sub-query four-route retrieval merge
 - `verify_local_step09_full_orchestration.py`: run a minimal end-to-end verification for full `Step 09` orchestration, including query decomposition, fixed query expansion, per-sub-query retrieval, rerank, context builder, and citation payload
 - `verify_local_step10_answer_generation.py`: run a minimal end-to-end verification for first-stage `Step 10` QA answer generation, including full retrieval orchestration, citation payload construction, structured answer generation, and local no-answer fallback
+
+Logging verification note:
+
+- the first-stage structured logging module is currently verified through automated tests
+- key coverage lives in:
+  - `tests/test_observability_logger.py`
+  - `tests/test_logging_integration.py`

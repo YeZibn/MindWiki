@@ -6,11 +6,14 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from mindwiki.infrastructure.settings import get_settings
+from mindwiki.observability.logger import LogEvent, LogTimer, ensure_request_id, get_logger
 from mindwiki.llm.embedding_models import EmbeddingRequest, EmbeddingResponse
 from mindwiki.llm.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleEmbeddingProvider,
 )
+
+_LOGGER = get_logger("mindwiki.embedding")
 
 
 class EmbeddingProvider(Protocol):
@@ -39,19 +42,53 @@ class EmbeddingService:
         if not payload.texts:
             raise ValueError("Embedding input texts must not be empty.")
 
+        request_id = ensure_request_id(payload.metadata)
         settings = get_settings()
         model = payload.model or settings.llm_embedding_model_id
         if not model:
             raise RuntimeError("LLM_EMBEDDING_MODEL_ID is not configured.")
 
         timeout_ms = payload.timeout_ms or settings.llm_embedding_timeout_ms
+        timer = LogTimer()
+        metadata = dict(payload.metadata or {})
+        metadata.setdefault("request_id", request_id)
+        metadata.setdefault("interface_name", "embedding")
+        _LOGGER.emit(
+            LogEvent(
+                event="embedding_started",
+                request_id=request_id,
+                interface_name=str(metadata.get("interface_name", "embedding")),
+                stage="embedding",
+                status="started",
+                metadata={
+                    "model": model,
+                    "text_count": len(payload.texts),
+                },
+            )
+        )
         request = EmbeddingRequest(
             model=model,
             texts=payload.texts,
             timeout_ms=timeout_ms,
-            metadata=dict(payload.metadata or {}),
+            metadata=metadata,
         )
-        return self._provider.embed(request)
+        response = self._provider.embed(request)
+        _LOGGER.emit(
+            LogEvent(
+                event="embedding_completed",
+                request_id=request_id,
+                interface_name=str(metadata.get("interface_name", "embedding")),
+                stage="embedding",
+                status="success",
+                duration_ms=timer.elapsed_ms(),
+                metadata={
+                    "model": response.model,
+                    "provider": response.provider,
+                    "vector_count": len(response.vectors),
+                },
+            )
+        )
+        return response
 
 
 def build_embedding_service() -> EmbeddingService | None:

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import json
 import time
 from typing import Any, Protocol
-from uuid import uuid4
 
 from mindwiki.infrastructure.settings import get_settings
 from mindwiki.llm.models import (
@@ -24,6 +23,9 @@ from mindwiki.llm.providers.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
 )
+from mindwiki.observability.logger import LogEvent, LogTimer, ensure_request_id, get_logger
+
+_LOGGER = get_logger("mindwiki.llm")
 
 
 class TextGenerationProvider(Protocol):
@@ -64,7 +66,7 @@ class LLMService:
         self._fallback_provider = fallback_provider
 
     def generate_text(self, payload: GenerateTextInput) -> LLMResponse:
-        request_id = self._resolve_request_id(payload.metadata)
+        request_id = ensure_request_id(payload.metadata)
         metadata = dict(payload.metadata or {})
         metadata.setdefault("request_id", request_id)
         metadata.setdefault("interface_name", "generate_text")
@@ -73,7 +75,23 @@ class LLMService:
             payload.overall_deadline_ms,
             request_timeout_ms,
         )
+        timer = LogTimer()
         started_at = time.monotonic()
+        _LOGGER.emit(
+            LogEvent(
+                event="llm_generate_text_started",
+                request_id=request_id,
+                interface_name=str(metadata.get("interface_name", "generate_text")),
+                stage="llm_generate_text",
+                status="started",
+                metadata={
+                    "task_type": payload.task_type,
+                    "model": payload.model or get_settings().llm_model_id,
+                    "max_tokens": payload.max_tokens,
+                    "allow_fallback": payload.allow_fallback,
+                },
+            )
+        )
 
         response = self._run_with_retries(
             provider=self._provider,
@@ -85,16 +103,79 @@ class LLMService:
             started_at=started_at,
         )
         if response.status == "success":
+            _LOGGER.emit(
+                LogEvent(
+                    event="llm_generate_text_completed",
+                    request_id=request_id,
+                    interface_name=str(metadata.get("interface_name", "generate_text")),
+                    stage="llm_generate_text",
+                    status="success",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={
+                        "task_type": payload.task_type,
+                        "model": response.model,
+                        "finish_reason": response.finish_reason,
+                        "validation_status": response.validation.final_status,
+                    },
+                )
+            )
             return response
 
         if not self._should_use_fallback(response, payload.allow_fallback):
+            _LOGGER.emit(
+                LogEvent(
+                    event="llm_generate_text_completed",
+                    request_id=request_id,
+                    interface_name=str(metadata.get("interface_name", "generate_text")),
+                    stage="llm_generate_text",
+                    status="failed",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={
+                        "task_type": payload.task_type,
+                        "model": response.model,
+                        "error_type": "" if response.error is None else response.error.error_type,
+                    },
+                )
+            )
             return response
 
         if self._fallback_provider is None:
+            _LOGGER.emit(
+                LogEvent(
+                    event="llm_generate_text_completed",
+                    request_id=request_id,
+                    interface_name=str(metadata.get("interface_name", "generate_text")),
+                    stage="llm_generate_text",
+                    status="failed",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={
+                        "task_type": payload.task_type,
+                        "model": response.model,
+                        "error_type": "" if response.error is None else response.error.error_type,
+                        "fallback_provider": "missing",
+                    },
+                )
+            )
             return response
 
         fallback_model = get_settings().llm_model_mini_id
         if not fallback_model:
+            _LOGGER.emit(
+                LogEvent(
+                    event="llm_generate_text_completed",
+                    request_id=request_id,
+                    interface_name=str(metadata.get("interface_name", "generate_text")),
+                    stage="llm_generate_text",
+                    status="failed",
+                    duration_ms=timer.elapsed_ms(),
+                    metadata={
+                        "task_type": payload.task_type,
+                        "model": response.model,
+                        "error_type": "" if response.error is None else response.error.error_type,
+                        "fallback_model": "missing",
+                    },
+                )
+            )
             return response
 
         fallback_payload = GenerateTextInput(
@@ -112,7 +193,7 @@ class LLMService:
             allow_fallback=False,
             metadata=metadata,
         )
-        return self._run_with_retries(
+        fallback_response = self._run_with_retries(
             provider=self._fallback_provider,
             payload=fallback_payload,
             metadata=metadata,
@@ -122,6 +203,24 @@ class LLMService:
             started_at=started_at,
             is_fallback=True,
         )
+        _LOGGER.emit(
+            LogEvent(
+                event="llm_generate_text_completed",
+                request_id=request_id,
+                interface_name=str(metadata.get("interface_name", "generate_text")),
+                stage="llm_generate_text",
+                status=fallback_response.status,
+                duration_ms=timer.elapsed_ms(),
+                metadata={
+                    "task_type": payload.task_type,
+                    "model": fallback_response.model,
+                    "used_fallback": True,
+                    "validation_status": fallback_response.validation.final_status,
+                    "error_type": "" if fallback_response.error is None else fallback_response.error.error_type,
+                },
+            )
+        )
+        return fallback_response
 
     def _run_with_retries(
         self,
@@ -208,12 +307,6 @@ class LLMService:
             ),
             metadata=metadata,
         )
-
-    @staticmethod
-    def _resolve_request_id(metadata: dict[str, object] | None) -> str:
-        if metadata is not None and "request_id" in metadata and metadata["request_id"]:
-            return str(metadata["request_id"])
-        return str(uuid4())
 
     @staticmethod
     def _resolve_timeout_ms(timeout_ms: int | None) -> int:

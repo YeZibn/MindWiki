@@ -17,6 +17,221 @@
 
 ### 2026-05-02
 
+#### 记录 087：完成模块 13 任务 05，补 README、配置与最小验收闭环
+
+- 状态：已完成
+- 范围：完成模块 13 中“任务 05：补 README、配置与最小验收闭环”，为第一阶段统一日志模块补齐使用说明和稳定本地验证入口
+- 结果：
+  - 已新增：
+    - `tests/test_logging_integration.py`
+  - 当前最小日志验收已覆盖：
+    - `llm_generate_text_started / completed`
+    - `rerank_started / completed`
+    - `embedding_started / completed`
+    - `qa_orchestration_started / completed`
+    - `qa_decomposition_completed`
+    - `qa_sub_query_completed`
+  - 当前验收口径已收敛为：
+    - 使用本地自动化测试验证日志事件是否真实落出
+    - 不额外引入依赖真实网关的日志验收脚本
+  - 已更新：
+    - `README.md`
+    - `scripts/README.md`
+  - 当前文档已明确：
+    - `LOG_LEVEL`
+    - `LOG_FORMAT`
+    - `JSON lines` 输出行为
+    - `stdout / stderr` 分流
+    - 当前日志覆盖范围
+    - 日志验收入口位于自动化测试
+  - 验证结果：
+    - `python3 -m py_compile tests/test_logging_integration.py` 通过
+    - `PYTHONPATH=src python3 -m pytest tests/test_observability_logger.py tests/test_logging_integration.py tests/test_llm_service.py tests/test_embedding_service.py` 通过
+    - 当前结果：`17 passed`
+- 影响：
+  - 模块 13 已具备完整文档说明与稳定本地验收闭环
+  - 统一日志能力已经从“实现”推进到“可验证、可交付”
+- 下一步：
+  - 模块 13 已完成，可进入下一个开发模块讨论
+
+#### 记录 086：完成模块 13 任务 04，接入导入链路与底层模型调用日志
+
+- 状态：已完成
+- 范围：完成模块 13 中“任务 04：接入导入链路与底层模型调用日志”，让第一阶段结构化日志覆盖导入、rerank、embedding 等关键环节
+- 结果：
+  - 已接入导入链路日志：
+    - `import_file_started`
+    - `import_file_completed`
+    - `import_directory_started`
+    - `import_directory_completed`
+  - 已接入 rerank 日志：
+    - `rerank_started`
+    - `rerank_completed`
+  - 已接入 embedding 日志：
+    - `embedding_started`
+    - `embedding_completed`
+  - 已补导入链路与向量化阶段的 `request_id` 贯穿：
+    - 文件导入请求会生成并贯穿 `request_id`
+    - 文档向量化阶段会继承导入链路 `request_id`
+  - 已更新 `README.md`：
+    - 明确当前结构化日志已覆盖：
+      - unified QA orchestration
+      - `generate_text`
+      - `rerank`
+      - `embedding`
+      - `import file`
+      - `import dir`
+  - 验证结果：
+    - `python3 -m py_compile src/mindwiki/application/import_service.py src/mindwiki/llm/rerank_service.py src/mindwiki/llm/embedding_service.py src/mindwiki/application/vector_index_service.py` 通过
+    - `PYTHONPATH=src python3 -m pytest tests/test_cli.py tests/test_embedding_service.py tests/test_llm_models.py tests/test_llm_service.py tests/test_vector_index_service.py` 通过
+    - 当前结果：`45 passed`
+- 影响：
+  - 当前第一阶段主要执行链路已经全部进入统一结构化日志体系
+  - 问答、导入、向量化、rerank、LLM 调用都可以按 `request_id` 或阶段事件进行排查
+- 遗留问题：
+  - 当前还未补“最小日志验收脚本”或“日志示例输出说明”
+  - 当前日志还没有区分更细粒度的失败类别聚合
+- 下一步：
+  - 继续推进模块 13 任务 05：补 README、配置与最小验收闭环
+
+#### 记录 085：完成模块 13 任务 01-03，落统一日志底座并接入 QA / LLM 主链路
+
+- 状态：已完成
+- 范围：完成模块 13 中“任务 01：日志设计对接与当前代码差异修正”“任务 02：建立统一结构化日志协议与基础 logger”“任务 03：接入统一 QA 主链路日志”，为当前主链路补齐第一阶段结构化日志能力
+- 结果：
+  - 已新增：
+    - `src/mindwiki/observability/logger.py`
+  - 已补日志配置：
+    - `LOG_LEVEL`
+    - `LOG_FORMAT`
+  - 当前统一日志协议已收敛为：
+    - `timestamp`
+    - `level`
+    - `logger`
+    - `event`
+    - `request_id`
+    - `interface_name`
+    - `stage`
+    - `status`
+    - `duration_ms`
+    - `metadata`
+  - 当前基础 logger 已实现：
+    - `JSON lines` 输出
+    - `stdout / stderr` 分流
+    - `request_id` 自动生成或继承
+    - 敏感字段脱敏
+    - 长文本 metadata 截断
+  - 已接入统一 QA 主链路日志：
+    - `qa_orchestration_started`
+    - `qa_decomposition_completed`
+    - `qa_sub_query_completed`
+    - `qa_orchestration_completed`
+  - 已接入 LLM 生成链路日志：
+    - `llm_generate_text_started`
+    - `llm_generate_text_completed`
+    - 当前已覆盖主模型、失败路径和 fallback 路径
+  - 已补测试：
+    - `tests/test_observability_logger.py`
+    - `tests/test_llm_models.py`
+    - `tests/test_llm_service.py`
+    - `tests/test_qa_orchestration_service.py`
+  - 验证结果：
+    - `python3 -m py_compile src/mindwiki/observability/logger.py src/mindwiki/llm/service.py src/mindwiki/application/qa_orchestration_service.py src/mindwiki/infrastructure/settings.py tests/test_observability_logger.py tests/test_llm_models.py tests/test_llm_service.py` 通过
+    - `PYTHONPATH=src python3 -m pytest tests/test_observability_logger.py tests/test_llm_models.py tests/test_llm_service.py tests/test_qa_orchestration_service.py` 通过
+    - 当前结果：`21 passed`
+- 影响：
+  - 项目第一次具备统一结构化应用日志底座
+  - 当前问答主链路已经可以按 `request_id` 观察关键阶段
+- 遗留问题：
+  - `import file / import dir` 尚未接日志
+  - `rerank / embedding` service 尚未接日志
+- 下一步：
+  - 继续推进模块 13 任务 04：接入导入链路与底层模型调用日志
+
+#### 记录 084：启动新开发模块，推进统一日志与链路追踪
+
+- 状态：进行中
+- 范围：在模块 12 已完成统一问答主入口后，启动新的开发模块，补统一日志与链路追踪能力，让导入、检索、问答主链路都具备结构化过程记录
+- 模块定位：
+  - 当前新模块正式进入：
+    - 统一日志协议
+    - 应用层全流程结构化日志
+    - 主链路 request_id 贯穿
+    - LLM / rerank / embedding / import / QA 的阶段性记录
+  - 目标是让系统可以稳定回答：
+    - 一次请求经过了哪些阶段
+    - 哪一步失败
+    - 各阶段耗时多少
+    - 最终返回了回答还是拒答
+    - 关键中间输出摘要是什么
+- 已确认边界：
+  - 第一阶段日志先输出到：
+    - `stdout / stderr`
+  - 第一阶段日志格式先统一为：
+    - `JSON lines`
+  - 第一阶段由系统自动生成并贯穿：
+    - `request_id`
+  - 第一阶段先做：
+    - 应用日志
+  - 第一阶段暂不进入：
+    - 数据库日志存储
+    - OpenTelemetry / trace span 体系
+    - 外部监控平台接入
+- 启动原因：
+  - 当前主链路已经统一到 `ask()` 入口，已经具备补全链路日志的最佳落点
+  - 如果继续推进 API 或前端而没有统一日志，后续排查召回、拒答、超时和落库问题的成本会明显上升
+  - 当前系统已经具备多阶段 RAG 链路，缺少日志意味着“能运行但不可观察”
+- 分步任务拆解：
+  - 任务 01：日志设计对接与当前代码差异修正
+    - 明确第一阶段日志边界、字段、敏感信息处理和输出位置
+  - 任务 02：建立统一结构化日志协议与基础 logger
+    - 至少包含：
+      - `timestamp`
+      - `level`
+      - `event`
+      - `request_id`
+      - `interface_name`
+      - `stage`
+      - `status`
+      - `duration_ms`
+      - `metadata`
+  - 任务 03：接入统一 QA 主链路日志
+    - 覆盖：
+      - decomposition
+      - expansion
+      - retrieval
+      - rerank
+      - context
+      - citation
+      - answer generation
+  - 任务 04：接入导入链路与底层模型调用日志
+    - 覆盖：
+      - import file
+      - import dir
+      - generate_text
+      - rerank
+      - embedding
+  - 任务 05：补 README、配置与最小验收闭环
+    - 说明日志输出方式、配置项与本地验证方式
+- 当前边界判断：
+  - 当前模块优先目标是：
+    - 先建立结构化应用日志
+    - 先覆盖主链路关键阶段
+  - 当前模块暂不直接进入：
+    - 指标系统
+    - 链路可视化平台
+    - 日志查询后台
+- 当前建议执行顺序：
+  - 先补日志协议和基础 logger
+  - 再补 QA 主链路
+  - 然后补 import + llm/rerank/embedding
+  - 最后补配置、README 和验收
+- 遗留问题：
+  - 第一阶段日志是否需要区分 `stdout` 与 `stderr` 的事件类型，需在任务 02 中收敛
+  - 对 prompt、chunk_text、snippet 等文本内容保留到什么程度，需在任务 01 中明确脱敏/摘要策略
+- 下一步：
+  - 开始当前模块任务 01：日志设计对接与当前代码差异修正
+
 #### 记录 083：完成模块 12 任务 05，补单元测试、README 与开发记录闭环
 
 - 状态：已完成
@@ -3739,3 +3954,13 @@
 | 03 | 实现统一 QA orchestration service | 已完成 | 已新增统一 `ask()` 应用层入口 |
 | 04 | 接入 CLI 最小问答命令 | 已完成 | 已新增 `mindwiki ask` 命令 |
 | 05 | 补单元测试、README 与开发记录闭环 | 已完成 | 已补测试、README 示例与开发记录闭环 |
+
+### 模块 13：统一日志与链路追踪
+
+| 任务 | 内容 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| 01 | 日志设计对接与当前代码差异修正 | 已完成 | 已收敛 `stdout/stderr + JSON lines + request_id` 边界 |
+| 02 | 建立统一结构化日志协议与基础 logger | 已完成 | 已落统一 logger、脱敏和 request_id 生成 |
+| 03 | 接入统一 QA 主链路日志 | 已完成 | 已覆盖 `ask()` 主入口与 `generate_text` 主链路 |
+| 04 | 接入导入链路与底层模型调用日志 | 已完成 | 已补 import / rerank / embedding 过程日志 |
+| 05 | 补 README、配置与最小验收闭环 | 已完成 | 已补日志说明与自动化验收闭环 |

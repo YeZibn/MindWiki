@@ -73,7 +73,10 @@ class QueryExpansionService:
         )
 
         if response.status != "success" or not isinstance(response.parsed_output, dict):
-            raise RuntimeError("Failed to generate query expansion.")
+            error_details = ""
+            if response.error is not None and response.error.message:
+                error_details = f": {response.error.error_type}: {response.error.message}"
+            raise RuntimeError(f"Failed to generate query expansion{error_details}")
 
         step_back_query = _normalize_query(str(response.parsed_output["step_back_query"]))
         hyde_query = _normalize_text(str(response.parsed_output["hyde_query"]))

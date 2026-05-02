@@ -292,6 +292,7 @@ def test_generate_text_uses_fallback_provider_after_primary_failure(
     )
     fallback_provider = RecordingProvider()
 
+    monkeypatch.delenv("LLM_MODEL_MINI_ID", raising=False)
     monkeypatch.setattr(settings_module, "DOTENV_PATH", env_path)
     settings_module.clear_settings_cache()
 
