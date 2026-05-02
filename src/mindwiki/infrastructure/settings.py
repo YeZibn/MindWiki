@@ -40,6 +40,7 @@ class Settings:
     database_url: str = ""
     log_level: str = "INFO"
     log_format: str = "json"
+    log_file_path: str = str(PROJECT_ROOT / "logs" / "mindwiki.jsonl")
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model_id: str = ""
@@ -76,6 +77,7 @@ def get_settings() -> Settings:
         database_url=os.getenv("MINDWIKI_DATABASE_URL", ""),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         log_format=os.getenv("LOG_FORMAT", "json"),
+        log_file_path=os.getenv("LOG_FILE_PATH", str(PROJECT_ROOT / "logs" / "mindwiki.jsonl")),
         llm_base_url=os.getenv("LLM_BASE_URL", ""),
         llm_api_key=os.getenv("LLM_API_KEY", ""),
         llm_model_id=os.getenv("LLM_MODEL_ID", ""),

@@ -114,6 +114,7 @@ Required environment variables:
 ```bash
 LOG_LEVEL=INFO
 LOG_FORMAT=json
+LOG_FILE_PATH=/Users/yezibin/Project/MindWiki/logs/mindwiki.jsonl
 LLM_BASE_URL=https://kuaipao.ai/v1
 LLM_API_KEY=your-api-key
 LLM_MODEL_ID=gpt-5.4
@@ -152,6 +153,8 @@ Current logging behavior:
 - first-stage logs currently emit structured `JSON lines`
 - `INFO` and lower-severity events go to `stdout`
 - `ERROR` events go to `stderr`
+- logs are also appended to the local file path in `LOG_FILE_PATH`
+- the default local file path is `/Users/yezibin/Project/MindWiki/logs/mindwiki.jsonl`
 - sensitive metadata fields such as `api_key` and `token` are redacted
 - long metadata strings are truncated before output
 - current structured logs now cover:

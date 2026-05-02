@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 import logging
+from pathlib import Path
 import sys
 from time import monotonic
 from typing import Any
@@ -36,7 +37,7 @@ class LogEvent:
 
 
 class StructuredLogger:
-    """Emit structured JSON lines to stdout or stderr."""
+    """Emit structured JSON lines to stdout/stderr and a local file."""
 
     def __init__(self, name: str) -> None:
         self._name = name
@@ -60,9 +61,11 @@ class StructuredLogger:
             "duration_ms": event.duration_ms,
             "metadata": _sanitize_metadata(event.metadata or {}),
         }
+        serialized = json.dumps(payload, ensure_ascii=False)
         stream = sys.stderr if event_level >= logging.ERROR else sys.stdout
-        stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        stream.write(serialized + "\n")
         stream.flush()
+        _append_log_file(self._settings.log_file_path, serialized)
 
 
 class LogTimer:
@@ -105,3 +108,10 @@ def _sanitize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
             continue
         sanitized[key] = value
     return sanitized
+
+
+def _append_log_file(log_file_path: str, serialized_payload: str) -> None:
+    path = Path(log_file_path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(serialized_payload + "\n")

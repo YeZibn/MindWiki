@@ -17,6 +17,28 @@
 
 ### 2026-05-02
 
+#### 记录 088：补默认本地日志文件落盘
+
+- 状态：已完成
+- 范围：在模块 13 已完成统一结构化日志能力后，补默认本地日志文件落盘，让日志不仅输出到 `stdout / stderr`，也默认保存到项目内文件
+- 结果：
+  - 已补日志配置：
+    - `LOG_FILE_PATH`
+  - 当前默认日志落盘路径已收敛为：
+    - `/Users/yezibin/Project/MindWiki/logs/mindwiki.jsonl`
+  - 当前日志行为已调整为：
+    - 继续输出到 `stdout / stderr`
+    - 同时追加写入本地 `jsonl` 文件
+  - 已补测试：
+    - `tests/test_observability_logger.py`
+  - 验证结果：
+    - `python3 -m py_compile src/mindwiki/observability/logger.py src/mindwiki/infrastructure/settings.py tests/test_observability_logger.py` 通过
+    - `PYTHONPATH=src python3 -m pytest tests/test_observability_logger.py tests/test_logging_integration.py` 通过
+    - 当前结果：`8 passed`
+- 影响：
+  - 当前日志已经具备默认本地持久化能力
+  - 后续排查不再依赖保留终端输出
+
 #### 记录 087：完成模块 13 任务 05，补 README、配置与最小验收闭环
 
 - 状态：已完成
